@@ -49,7 +49,10 @@ export type Question = {
 const employee = (a: Answers) => a.title === "umowa_o_prace";
 const selfEmployed = (a: Answers) => a.title === "jdg_chorobowe" || a.title === "jdg_bez";
 const voluntary = (a: Answers) => a.title === "zlecenie_chorobowe" || a.title === "jdg_chorobowe";
+/** ma umowę lub działalność (z chorobowym albo bez) */
 const insured = (a: Answers) => !!a.title && !["brak", "dzielo"].includes(a.title);
+/** ma ubezpieczenie chorobowe */
+const sickInsured = (a: Answers) => a.title === "umowa_o_prace" || voluntary(a);
 
 export const QUESTIONS: Question[] = [
   { id: "imie", fields: ["imie", "nazwisko"], kind: "name", required: true, title: "Jak masz na imię?", help: "Imię i nazwisko pojawią się na Twoich wnioskach." },
@@ -77,7 +80,8 @@ export const QUESTIONS: Question[] = [
       { value: "dzielo", label: "Umowa o dzieło" },
       { value: "brak", label: "Obecnie nie pracuję" },
     ] },
-  { id: "ubezpieczenieOd", fields: ["ubezpieczenieOd"], kind: "date", field: "ubezpieczenieOd", title: "Od kiedy masz to ubezpieczenie?", help: "Data rozpoczęcia pracy, zlecenia lub zgłoszenia do dobrowolnego chorobowego.", when: insured },
+  { id: "ubezpieczenieOd", fields: ["ubezpieczenieOd"], kind: "date", field: "ubezpieczenieOd", title: "Od kiedy masz to ubezpieczenie?", help: "Data rozpoczęcia pracy, zlecenia lub zgłoszenia do dobrowolnego chorobowego.", when: sickInsured },
+  { id: "umowaOd", fields: ["ubezpieczenieOd"], kind: "date", field: "ubezpieczenieOd", title: "Od kiedy trwa Twoja umowa lub działalność?", help: "Data rozpoczęcia zlecenia lub działalności. Przyda się, jeśli zdecydujesz się dołączyć do dobrowolnego ubezpieczenia chorobowego.", when: (a) => insured(a) && !sickInsured(a) },
   { id: "rodzajUmowy", fields: ["rodzajUmowy"], kind: "choice", field: "rodzajUmowy", title: "Jaka to umowa o pracę?", when: employee,
     options: [{ value: "nieokreslony", label: "Na czas nieokreślony" }, { value: "okreslony", label: "Na czas określony" }, { value: "probny", label: "Na okres próbny" }] },
   { id: "umowaDo", fields: ["umowaDo"], kind: "date", field: "umowaDo", title: "Do kiedy trwa umowa?", help: "Umowa, która skończyłaby się po 3. miesiącu ciąży, przedłuża się do dnia porodu.", when: (a) => employee(a) && (a.rodzajUmowy === "okreslony" || a.rodzajUmowy === "probny") },
@@ -114,7 +118,99 @@ export const missingQuestions = (a: Answers) => activeQuestions(a).filter((q) =>
 export const MISSING_LABELS: Record<string, string> = {
   plec: "rola (mama / tata)", sytuacja: "etap rodzicielstwa", termin: "planowana data porodu", dziecko: "data urodzenia dziecka",
   przyjecie: "data przyjęcia dziecka", urodzenieDziecka: "data urodzenia przyjętego dziecka", ustanie: "czy praca się kończy", ustanieData: "data ustania stosunku pracy", ustaniePowod: "przyczyna ustania zatrudnienia",
-  title: "forma zatrudnienia", ubezpieczenieOd: "początek ubezpieczenia", rodzajUmowy: "rodzaj umowy", umowaDo: "koniec umowy",
+  title: "forma zatrudnienia", ubezpieczenieOd: "początek ubezpieczenia", umowaOd: "początek umowy lub działalności", rodzajUmowy: "rodzaj umowy", umowaDo: "koniec umowy",
   etat: "wymiar etatu", platnik: "wielkość pracodawcy", zarobki: "zarobki", podstawa: "podstawa składek", skladki: "terminowość składek",
   zadluzenie: "należności do uregulowania", pesel: "PESEL",
 };
+
+/* ── Walidacja (wspólna dla ankiety, profilu i API) ── */
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const NAME = /^[\p{L}][\p{L}\p{M} '’.-]*$/u;
+const today = () => new Date().toISOString().slice(0, 10);
+const shift = (iso: string, days: number) => new Date(new Date(iso + "T12:00:00Z").getTime() + days * 86400000).toISOString().slice(0, 10);
+const validIso = (v: unknown): v is string => typeof v === "string" && ISO.test(v) && !Number.isNaN(Date.parse(v + "T12:00:00Z")) && new Date(v + "T12:00:00Z").toISOString().startsWith(v);
+const years = (from: string, to: string) => (new Date(to + "T12:00:00Z").getTime() - new Date(from + "T12:00:00Z").getTime()) / (365.25 * 86400000);
+const fmt = (iso: string) => iso.split("-").reverse().join(".");
+
+/** Suma kontrolna numeru PESEL. */
+export function peselValid(p: string) {
+  if (!/^\d{11}$/.test(p)) return false;
+  const w = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3];
+  const sum = w.reduce((s, x, i) => s + x * Number(p[i]), 0);
+  return (10 - (sum % 10)) % 10 === Number(p[10]);
+}
+
+export const LIMITS = { imie: 40, nazwisko: 60 } as const;
+
+/**
+ * Sprawdza zakresy i spójność odpowiedzi. Zwraca komunikaty dla pól z błędem ({} – wszystko w porządku).
+ * Pola puste są pomijane (można je uzupełnić później).
+ */
+export function validateAnswers(raw: Record<string, unknown>): Partial<Record<keyof Answers, string>> {
+  const a = raw as Answers;
+  const e: Partial<Record<keyof Answers, string>> = {};
+  const now = today();
+  const has = (k: keyof Answers) => raw[k] !== undefined && raw[k] !== null && raw[k] !== "";
+
+  for (const k of ["imie", "nazwisko"] as const) {
+    if (!has(k)) continue;
+    const v = String(raw[k]).trim();
+    if (v.length > LIMITS[k]) e[k] = `${k === "imie" ? "Imię" : "Nazwisko"} może mieć najwyżej ${LIMITS[k]} znaków.`;
+    else if (!NAME.test(v)) e[k] = `${k === "imie" ? "Imię" : "Nazwisko"} może zawierać tylko litery, spacje, apostrof i myślnik.`;
+  }
+  if (has("pesel") && !peselValid(String(raw.pesel).trim())) e.pesel = "Ten PESEL jest niepoprawny – sprawdź cyfry (11 cyfr z poprawną sumą kontrolną).";
+
+  for (const k of ["termin", "dzieckoData", "dzieckoUrodzenie", "ubezpieczenieOd", "umowaDo", "ustanieData"] as const)
+    if (has(k) && !validIso(raw[k])) e[k] = "Podaj poprawną datę.";
+
+  const ok = (k: keyof Answers) => has(k) && !e[k];
+  if (ok("termin") && a.sytuacja !== "dziecko") {
+    if (a.termin! < shift(now, -14)) e.termin = "Planowana data porodu minęła ponad 2 tygodnie temu. Jeśli dziecko już się urodziło, wybierz „Dziecko już się urodziło”.";
+    else if (a.termin! > shift(now, 300)) e.termin = "Planowana data porodu może przypadać najpóźniej ok. 300 dni od dziś.";
+  }
+  const taking = a.sytuacja === "adopcja" || a.sytuacja === "zastepcza";
+  if (ok("dzieckoData")) {
+    if (a.sytuacja === "dziecko") {
+      if (a.dzieckoData! > now) e.dzieckoData = "Data urodzenia nie może być z przyszłości. Jeśli czekacie na poród, wybierz „Spodziewamy się dziecka”.";
+      else if (years(a.dzieckoData!, now) > 18) e.dzieckoData = "Dziecko ma ponad 18 lat – sprawdź datę.";
+    } else if (taking) {
+      if (a.dzieckoData! > shift(now, 365)) e.dzieckoData = "Data przyjęcia może przypadać najpóźniej za rok.";
+      else if (years(a.dzieckoData!, now) > 14) e.dzieckoData = "Data przyjęcia jest sprzed ponad 14 lat – sprawdź datę.";
+    }
+  }
+  if (ok("dzieckoUrodzenie")) {
+    if (a.dzieckoUrodzenie! > now) e.dzieckoUrodzenie = "Data urodzenia nie może być z przyszłości.";
+    else if (ok("dzieckoData") && taking) {
+      if (a.dzieckoUrodzenie! > a.dzieckoData!) e.dzieckoUrodzenie = "Dziecko musi urodzić się przed dniem przyjęcia na wychowanie.";
+      else {
+        const age = years(a.dzieckoUrodzenie!, a.dzieckoData!);
+        const max = a.sytuacja === "adopcja" ? 14 : 10;
+        if (age >= max)
+          e.dzieckoUrodzenie = a.sytuacja === "adopcja"
+            ? "Urlop na warunkach macierzyńskiego przy przysposobieniu przysługuje, gdy dziecko w dniu przyjęcia nie ukończyło 14 lat."
+            : "W rodzinie zastępczej urlop przysługuje, gdy dziecko w dniu przyjęcia nie ukończyło 7 lat (10 – przy odroczonym obowiązku szkolnym).";
+      }
+    }
+  }
+  if (ok("ubezpieczenieOd")) {
+    if (a.ubezpieczenieOd! < "1950-01-01") e.ubezpieczenieOd = "Sprawdź datę rozpoczęcia ubezpieczenia.";
+    else if (a.ubezpieczenieOd! > shift(now, 365)) e.ubezpieczenieOd = "Data rozpoczęcia może przypadać najpóźniej za rok.";
+    else {
+      const event = a.sytuacja === "ciaza" ? a.termin : a.sytuacja === "dziecko" || taking ? a.dzieckoData : undefined;
+      if (event && validIso(event) && a.ubezpieczenieOd! > event)
+        e.ubezpieczenieOd = `Ubezpieczenie zaczyna się po dniu ${a.sytuacja === "ciaza" ? "planowanego porodu" : a.sytuacja === "dziecko" ? "urodzenia dziecka" : "przyjęcia dziecka"} (${fmt(event)}) – w tym dniu nie będzie ubezpieczenia, więc zasiłek macierzyński nie przysługuje. Sprawdź datę.`;
+    }
+  }
+  if (ok("umowaDo") && ok("ubezpieczenieOd") && a.umowaDo! < a.ubezpieczenieOd!) e.umowaDo = "Umowa nie może kończyć się przed jej rozpoczęciem.";
+  if (ok("ustanieData") && ok("ubezpieczenieOd") && a.ustanieData! < a.ubezpieczenieOd!) e.ustanieData = "Data ustania nie może być wcześniejsza niż początek ubezpieczenia.";
+
+  const num = (k: keyof Answers) => (has(k) ? Number(String(raw[k]).replace(",", ".").replace(/\s/g, "")) : undefined);
+  const liczba = num("liczbaUbezpieczonych");
+  if (liczba !== undefined && (!Number.isInteger(liczba) || liczba < 1 || liczba > 1_000_000)) e.liczbaUbezpieczonych = "Podaj liczbę całkowitą, co najmniej 1.";
+  const zarobki = num("zarobki");
+  if (zarobki !== undefined && (!Number.isFinite(zarobki) || zarobki <= 0 || zarobki > 1_000_000)) e.zarobki = "Podaj kwotę większą od zera.";
+  const dlug = num("zadluzenie");
+  if (dlug !== undefined && (!Number.isFinite(dlug) || dlug < 0 || dlug > 10_000_000)) e.zadluzenie = "Podaj kwotę 0 lub większą.";
+  return e;
+}

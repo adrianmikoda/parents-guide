@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { PERSONAS } from "@/lib/mock";
-import { SESSION_COOKIE, currentPersona, json, startSession } from "@/lib/session";
+import { currentPersona, endSession, json, startSession } from "@/lib/session";
 
 /** GET – lista kont testowych (symulacja) + aktualna sesja */
 export async function GET(req: Request) {
@@ -13,14 +12,15 @@ export async function GET(req: Request) {
 
 /** POST {personaId} – symulacja potwierdzenia logowania w aplikacji mObywatel */
 export async function POST(req: Request) {
-  const { personaId } = await req.json();
+  const { personaId } = await req.json().catch(() => ({}));
   const p = PERSONAS.find((x) => x.id === personaId);
   if (!p) return json({ error: "Nieznane konto testowe" }, 404);
   await startSession(p.id);
   return json({ ok: true, user: { id: p.id, imie: p.imie, nazwisko: p.nazwisko }, authLevel: "wysoki (symulacja)", provider: "mObywatel (symulacja)" });
 }
 
+/** DELETE – wylogowanie: usuwa sesję, poprawki profilu i konto z tej przeglądarki */
 export async function DELETE() {
-  (await cookies()).delete(SESSION_COOKIE);
+  await endSession();
   return json({ ok: true });
 }

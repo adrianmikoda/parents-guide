@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import Icon from "./Icon";
+import { useDialog } from "./useDialog";
 import Markdown from "./Markdown";
 import { api } from "./AppContext";
 import { PAGES, targetById } from "@/lib/guide";
@@ -232,6 +233,7 @@ export default function FloatingGuide() {
   const [mode, setMode] = useState("");
   const [plan, setPlan] = useState<{ steps: string[]; idx: number; texts?: string[]; go?: boolean[]; sections?: string[] } | null>(null);
   const [offer, setOffer] = useState(false);
+  const offerBox = useRef<HTMLDivElement>(null);
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [drawKey, setDrawKey] = useState(0);
   const [missing, setMissing] = useState(false);
@@ -298,6 +300,7 @@ export default function FloatingGuide() {
     return () => window.removeEventListener(TUTORIAL_EVT, runTutorial);
   }, [runTutorial]);
   const declineTutorial = () => { setOffer(false); try { sessionStorage.removeItem(OFFER); } catch {} };
+  useDialog(offerBox, declineTutorial, offer && !plan);
 
   // Krok wykonany przez samo przejście na stronę (cel = cała strona)
   useEffect(() => { if (step?.done) next(); }, [step, next]);
@@ -413,8 +416,8 @@ export default function FloatingGuide() {
       )}
 
       {offer && !plan && (
-        <div className="modal-bg guide-modal" role="dialog" aria-modal aria-labelledby="tut-title">
-          <div className="modal">
+        <div className="modal-bg guide-modal" role="dialog" aria-modal aria-labelledby="tut-title" onClick={(e) => { if (e.target === e.currentTarget) declineTutorial(); }}>
+          <div className="modal" ref={offerBox} tabIndex={-1}>
             <h2 id="tut-title">Pokazać, jak korzystać z aplikacji?</h2>
             <p className="muted">Samouczek przeprowadzi Cię po wszystkich zakładkach menu: klikniesz każdą z nich, a na miejscu zakreślimy i wyjaśnimy najważniejsze elementy. Na koniec pokażemy ustawienia wyglądu i pomocnika. Możesz go przerwać w każdej chwili.</p>
             <div className="row mt" style={{ justifyContent: "flex-end" }}>

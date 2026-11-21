@@ -1,11 +1,12 @@
 "use client";
-import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import { api, useApp } from "@/components/AppContext";
 import { Check, Notes, Num, PeriodsTable, Seg, Slider, Timeline } from "@/components/ui";
-import { calculate, CalcInput, computeBase, diffDays, fmtDate, r2, Title, TITLE_LABELS, zl } from "@/lib/engine";
+import { calculate, CalcInput, computeBase, diffDays, fmtDate, isValidDate, pct, r2, Title, TITLE_LABELS, zl } from "@/lib/engine";
+import { sendApp } from "@/lib/apps-client";
 import ShareDialog from "@/components/Share";
 import { defaultCalcInput } from "@/lib/cases";
 
@@ -20,12 +21,12 @@ function BaseHelper({ onApply }: { onApply: (b: number) => void }) {
   return (
     <div className="card flat" style={{ background: "var(--bg)" }}>
       <div className="grid g3">
-        <div className="field"><label>Tytuł</label>
-          <select className="input" value={title} onChange={(e) => setTitle(e.target.value as Title)}>
+        <div className="field"><label htmlFor="bh-title">Tytuł</label>
+          <select id="bh-title" className="input" value={title} onChange={(e) => setTitle(e.target.value as Title)}>
             {(["umowa_o_prace", "zlecenie_chorobowe", "jdg_chorobowe"] as Title[]).map((t) => <option key={t} value={t}>{TITLE_LABELS[t]}</option>)}
           </select>
         </div>
-        <Num label={title === "jdg_chorobowe" ? "Średnia zadeklarowana podstawa składek" : "Średni przychód brutto z 12 mies."} suffix="zł" value={avg} onChange={setAvg} />
+        <Num label={title === "jdg_chorobowe" ? "Średnia zadeklarowana podstawa składek" : "Średni przychód brutto z 12 mies."} suffix="zł" value={avg} min={0} onChange={setAvg} />
         {title === "umowa_o_prace" && <Num label="Wymiar etatu" value={etat} step={0.25} min={0.25} max={1} onChange={setEtat} />}
       </div>
       <ul style={{ margin: "10px 0", paddingLeft: 18, fontSize: 13 }}>{res.steps.map((s, i) => <li key={i}>{s}</li>)}</ul>
@@ -63,12 +64,12 @@ function Calculator() {
 
   // wczytanie planu z dokumentu (?base=&date=&children=)
   useEffect(() => {
-    const b = sp.get("base");
-    if (b) setM({ base: parseFloat(b) });
+    const b = Number(sp.get("base"));
+    if (sp.get("base") && Number.isFinite(b) && b >= 0 && b <= 1_000_000) setM({ base: b });
     const d = sp.get("date");
-    if (d) set({ eventDate: d });
-    const c = sp.get("children");
-    if (c) set({ children: parseInt(c, 10) });
+    if (isValidDate(d)) set({ eventDate: d });
+    const c = Number(sp.get("children"));
+    if (Number.isInteger(c) && c >= 1 && c <= 6) set({ children: c });
     if (sp.get("zaZyciem") === "1") set({ zaZyciem: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
@@ -89,8 +90,18 @@ function Calculator() {
       mother: { ...s.mother, base: isMother ? myBase : partnerBase, insured: isMother ? ["umowa_o_prace", "zlecenie_chorobowe", "jdg_chorobowe"].includes(me.title) : !!profile.partner },
       father: { ...s.father, base: isMother ? partnerBase : myBase, insured: isMother ? !!profile.partner : true },
     }));
-    setCaseInfo(`Dane z ZUS: ${me.imie} ${me.nazwisko}${profile.partner ? ` + ${profile.partner.imie} ${profile.partner.nazwisko}` : ""}`);
+    setCaseInfo(`${profile.wlasne ? "Twoje dane z ankiety" : "Dane z ZUS"}: ${me.imie} ${me.nazwisko}${profile.partner ? ` + ${profile.partner.imie} ${profile.partner.nazwisko}` : ""}`);
   }
+
+  // dane zalogowanej osoby wczytujemy automatycznie (raz), chyba że otwarto sprawę testową lub plan z adresu
+  const autoLoaded = useRef(false);
+  useEffect(() => {
+    if (autoLoaded.current || !profile?.person) return;
+    autoLoaded.current = true;
+    if (sp.get("case") || sp.get("base") || sp.get("date")) return;
+    fromZus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
 
   const effective: CalcInput = useMemo(
     () => ({ ...inp, stillbirth: loss === "martwe", childDeathDay: loss === "zgon" ? (inp.childDeathDay ?? 20) : null }),
@@ -119,7 +130,7 @@ function Calculator() {
       ...(res.totals.daysB ? [`• ${who("B")}: ${zl(res.totals.B)} (${res.totals.daysB} dni)`] : []),
       "",
       "Okresy:",
-      ...res.periods.map((p) => `• ${who(p.who)} – ${p.label}: ${fmtDate(p.start)} – ${fmtDate(p.end)}, ${p.rate}% podstawy, ok. ${zl(p.monthly)} / mies.${p.workFraction ? ` (z pracą ${Math.round(p.workFraction * 100)}% etatu)` : ""}`),
+      ...res.periods.map((p) => `• ${who(p.who)} – ${p.label}: ${fmtDate(p.start)} – ${fmtDate(p.end)}, ${pct(p.rate)} podstawy, ok. ${zl(p.monthly)} / mies.${p.workFraction ? ` (z pracą ${Math.round(p.workFraction * 100)}% etatu)` : ""}`),
       ...(res.deadlines.length ? ["", "Ważne terminy:", ...res.deadlines.map((d) => `• ${fmtDate(d.date)} – ${d.label}`)] : []),
       "",
       "Wyliczenie ma charakter informacyjny i nie stanowi decyzji ZUS ani pracodawcy.",
@@ -134,8 +145,10 @@ function Calculator() {
   };
 
   async function savePlan() {
-    const r = await api("/api/applications", { typ: "plan_urlopow", adresat: "Moje dokumenty (zapis planu)", dane: { input: effective, totals: res.totals } });
-    setSaved(r.application?.upo);
+    try {
+      const a = await sendApp(session?.id ?? "", { typ: "plan_urlopow", dane: { input: effective, totals: res.totals } });
+      setSaved(`zapisano w tej przeglądarce · ${a.upo}`);
+    } catch { setSaved("nie udało się zapisać"); }
   }
 
   return (
@@ -156,14 +169,15 @@ function Calculator() {
 
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", alignItems: "start" }}>
         {/* ───── FORMULARZ ───── */}
-        <div>
+        <div className="calc-form">
           <div className="card" data-guide="t-kalk-sytuacja">
             <h2>1. Sytuacja</h2>
-            <Seg guide="kalk-sytuacja" value={inp.scenario} onChange={(v) => set({ scenario: v })} options={[["porod", "Urodzenie dziecka"], ["adopcja", "Przysposobienie"], ["zastepcza", "Rodzina zastępcza niezawodowa"]]} />
+            <Seg guide="kalk-sytuacja" label="Sytuacja" value={inp.scenario} onChange={(v) => set({ scenario: v })} options={[["porod", "Urodzenie dziecka"], ["adopcja", "Przysposobienie"], ["zastepcza", "Rodzina zastępcza niezawodowa"]]} />
             <div className="grid g2 mt">
               <div className="field">
-                <label>{adoptive ? "Data przyjęcia dziecka" : "Data porodu (przewidywana lub faktyczna)"}</label>
-                <input className="input" type="date" value={inp.eventDate} onChange={(e) => set({ eventDate: e.target.value })} />
+                <label htmlFor="kalk-date">{adoptive ? "Data przyjęcia dziecka" : "Data porodu (przewidywana lub faktyczna)"}</label>
+                <input id="kalk-date" className="input" type="date" value={inp.eventDate} aria-invalid={!isValidDate(inp.eventDate)} aria-describedby={!isValidDate(inp.eventDate) ? "kalk-date-err" : undefined} onChange={(e) => set({ eventDate: e.target.value })} />
+                {!isValidDate(inp.eventDate) && <span id="kalk-date-err" className="hint" style={{ color: "var(--err)" }}>Podaj pełną datę (dzień, miesiąc, rok).</span>}
               </div>
               <Num label={adoptive ? "Liczba przyjętych dzieci" : "Liczba dzieci urodzonych przy jednym porodzie"} value={inp.children} min={1} max={6} onChange={(v) => set({ children: Math.max(1, Math.round(v)) })} />
               {adoptive && <Num label="Wiek dziecka" suffix="lat" value={inp.childAgeYears ?? 0} min={0} max={18} onChange={(v) => set({ childAgeYears: v })} />}
@@ -177,16 +191,16 @@ function Calculator() {
                   {inp.premature?.enabled && (
                     <div className="grid g3" style={{ padding: "4px 4px 8px" }}>
                       <Num label="Tydzień ciąży przy porodzie" value={inp.premature.tydzienCiazy} min={20} max={42} onChange={(v) => set({ premature: { ...inp.premature!, tydzienCiazy: v } })} />
-                      <Num label="Masa urodzeniowa" suffix="g" value={inp.premature.masa} onChange={(v) => set({ premature: { ...inp.premature!, masa: v } })} />
-                      <Num label="Dni hospitalizacji" value={inp.premature.dniHospitalizacji} onChange={(v) => set({ premature: { ...inp.premature!, dniHospitalizacji: v } })} />
+                      <Num label="Masa urodzeniowa" suffix="g" min={0} value={inp.premature.masa} onChange={(v) => set({ premature: { ...inp.premature!, masa: v } })} />
+                      <Num label="Dni hospitalizacji" min={0} value={inp.premature.dniHospitalizacji} onChange={(v) => set({ premature: { ...inp.premature!, dniHospitalizacji: v } })} />
                       <div className="field"><label>Kto korzysta</label>
-                        <Seg value={inp.premature.who} onChange={(v) => set({ premature: { ...inp.premature!, who: v } })} options={[["matka", "Matka"], ["ojciec", "Ojciec"]]} />
+                        <Seg label="Kto korzysta" value={inp.premature.who} onChange={(v) => set({ premature: { ...inp.premature!, who: v } })} options={[["matka", "Matka"], ["ojciec", "Ojciec"]]} />
                       </div>
                     </div>
                   )}
                   <div className="field mt">
                     <label>Sytuacja szczególna</label>
-                    <Seg guide="kalk-strata" value={loss} onChange={setLoss} options={[["brak", "Nie dotyczy"], ["martwe", "Martwe urodzenie"], ["zgon", "Zgon dziecka"]]} />
+                    <Seg guide="kalk-strata" label="Sytuacja szczególna" value={loss} onChange={setLoss} options={[["brak", "Nie dotyczy"], ["martwe", "Martwe urodzenie"], ["zgon", "Zgon dziecka"]]} />
                     {loss === "zgon" && <Num label="Dzień życia dziecka, w którym nastąpił zgon" value={inp.childDeathDay ?? 20} min={0} onChange={(v) => set({ childDeathDay: v })} />}
                     {loss !== "brak" && <small>Bardzo nam przykro. Wsparcie znajdziesz w zakładce <Link href="/wsparcie">Wsparcie</Link>.</small>}
                   </div>
@@ -207,7 +221,7 @@ function Calculator() {
                     <Check checked={par.insured} onChange={(v) => setP({ insured: v })} label="Podlega ubezpieczeniu chorobowemu" hint={adoptive ? "w dniu przyjęcia dziecka" : "w dniu porodu"} />
                     {par.insured && (
                       <>
-                        <Num label="Podstawa wymiaru zasiłku" suffix="zł/mies." value={par.base} onChange={(v) => setP({ base: v })} />
+                        <Num label="Podstawa wymiaru zasiłku" suffix="zł/mies." value={par.base} min={0} max={1_000_000} onChange={(v) => setP({ base: v })} />
                         <button type="button" className="btn btn-outline" onClick={() => setHelper(helper === w ? null : w)}><Icon name="calc" size={16} /> Oblicz z wynagrodzenia</button>
                       </>
                     )}
@@ -231,11 +245,11 @@ function Calculator() {
                 <div className="grid" style={{ gap: 12 }}>
                   <b>{L.A}</b>
                   {!adoptive && <Slider label="Część urlopu macierzyńskiego przed porodem" value={inp.mother.beforeBirthWeeks} min={0} max={W.przedPorodemMaxTygodnie} onChange={(v) => setM({ beforeBirthWeeks: v })} />}
-                  <Check checked={inp.mother.jednolity} onChange={(v) => setM({ jednolity: v })} label={`Stawka jednolita ${params.stawki.jednolity}% za cały okres`} hint={`wniosek do ${params.terminy.jednolityWniosekDni} dni po ${adoptive ? "przyjęciu" : "porodzie"}`} />
+                  <Check checked={inp.mother.jednolity} onChange={(v) => setM({ jednolity: v })} label={`Stawka jednolita ${pct(params.stawki.jednolity)} za cały okres`} hint={`wniosek do ${params.terminy.jednolityWniosekDni} dni po ${adoptive ? "przyjęciu" : "porodzie"}`} />
                   <Slider label="Urlop rodzicielski" value={inp.mother.rodzicielskiWeeks} min={0} max={maxOne} onChange={(v) => setM({ rodzicielskiWeeks: v })} />
                   <div className="grid g2">
-                    <div className="field" data-guide="kalk-praca"><label>Praca w trakcie rodzicielskiego</label>
-                      <select className="input" value={inp.mother.workFraction} onChange={(e) => setM({ workFraction: parseFloat(e.target.value) })}>
+                    <div className="field" data-guide="kalk-praca"><label htmlFor="kalk-praca-a">Praca w trakcie rodzicielskiego</label>
+                      <select id="kalk-praca-a" className="input" value={inp.mother.workFraction} onChange={(e) => setM({ workFraction: parseFloat(e.target.value) })}>
                         <option value={0}>Bez pracy</option><option value={0.25}>¼ etatu</option><option value={1 / 3}>⅓ etatu</option><option value={0.5}>½ etatu</option>
                       </select>
                     </div>
@@ -248,17 +262,17 @@ function Calculator() {
                   <b>{L.B}</b>
                   {inp.mother.insured && maxTake > 0 && <Slider label={adoptive ? "Część urlopu na warunkach macierzyńskiego" : "Przejęcie części urlopu macierzyńskiego"} value={inp.father.takeOverWeeks} min={0} max={maxTake} onChange={(v) => setF({ takeOverWeeks: v })} />}
                   {inp.scenario !== "zastepcza" && (
-                    <Check checked={inp.father.ojcowski} onChange={(v) => setF({ ojcowski: v })} label={`Urlop ojcowski – ${W.ojcowskiDni} dni (${params.stawki.ojcowski}%)`} hint={`do ukończenia przez dziecko ${W.ojcowskiDoMiesiacaZycia} mies.`} />
+                    <Check checked={inp.father.ojcowski} onChange={(v) => setF({ ojcowski: v })} label={`Urlop ojcowski – ${W.ojcowskiDni} dni (${pct(params.stawki.ojcowski)})`} hint={`do ukończenia przez dziecko ${W.ojcowskiDoMiesiacaZycia} mies.`} />
                   )}
                   {inp.father.ojcowski && inp.scenario !== "zastepcza" && (
-                    <div className="field" data-guide="kalk-ojcowski"><label>Początek urlopu ojcowskiego</label>
-                      <input className="input" type="date" value={inp.father.ojcowskiStart || inp.eventDate} onChange={(e) => setF({ ojcowskiStart: e.target.value })} />
+                    <div className="field" data-guide="kalk-ojcowski"><label htmlFor="kalk-ojc">Początek urlopu ojcowskiego</label>
+                      <input id="kalk-ojc" className="input" type="date" min={isValidDate(inp.eventDate) ? inp.eventDate : undefined} value={inp.father.ojcowskiStart || inp.eventDate} onChange={(e) => setF({ ojcowskiStart: e.target.value })} />
                     </div>
                   )}
                   <Slider label="Urlop rodzicielski" value={inp.father.rodzicielskiWeeks} min={0} max={Math.min(maxOne, pool - (inp.mother.insured ? inp.mother.rodzicielskiWeeks : 0))} onChange={(v) => setF({ rodzicielskiWeeks: v })} />
                   <div className="grid g2">
-                    <div className="field"><label>Praca w trakcie rodzicielskiego</label>
-                      <select className="input" value={inp.father.workFraction} onChange={(e) => setF({ workFraction: parseFloat(e.target.value) })}>
+                    <div className="field"><label htmlFor="kalk-praca-b">Praca w trakcie rodzicielskiego</label>
+                      <select id="kalk-praca-b" className="input" value={inp.father.workFraction} onChange={(e) => setF({ workFraction: parseFloat(e.target.value) })}>
                         <option value={0}>Bez pracy</option><option value={0.25}>¼ etatu</option><option value={1 / 3}>⅓ etatu</option><option value={0.5}>½ etatu</option>
                       </select>
                     </div>
@@ -268,23 +282,27 @@ function Calculator() {
               )}
               <div className="grid mt2" style={{ gap: 8 }}>
                 <div className="field"><label>Urlop rodzicielski rodziców</label>
-                  <Seg guide="kalk-tryb" value={inp.rodzicielskiMode} onChange={(v) => set({ rodzicielskiMode: v })} options={[["kolejno", "Kolejno (po sobie)"], ["jednoczesnie", "Jednocześnie"]]} />
+                  <Seg guide="kalk-tryb" label="Urlop rodzicielski rodziców" value={inp.rodzicielskiMode} onChange={(v) => set({ rodzicielskiMode: v })} options={[["kolejno", "Kolejno (po sobie)"], ["jednoczesnie", "Jednocześnie"]]} />
                 </div>
-                <Check checked={inp.fullPoolException} onChange={(v) => set({ fullPoolException: v })} label="Drugi rodzic nie może skorzystać z urlopu (wyjątek ustawowy)" hint="np. zgon, pozbawienie władzy rodzicielskiej – cała pula dla jednego rodzica" />
+                <Check checked={inp.fullPoolException} onChange={(v) => {
+                  set({ fullPoolException: v });
+                  if (v) { setM({ rodzicielskiWeeks: pool }); setF({ rodzicielskiWeeks: 0 }); }
+                  else { setM({ rodzicielskiWeeks: pool - W.nieprzenoszalnaCzescTygodnie }); setF({ rodzicielskiWeeks: inp.father.insured ? W.nieprzenoszalnaCzescTygodnie : 0 }); }
+                }} label="Drugi rodzic nie może skorzystać z urlopu (wyjątek ustawowy)" hint="np. zgon, pozbawienie władzy rodzicielskiej – cała pula dla jednego rodzica" />
               </div>
             </div>
           )}
         </div>
 
         {/* ───── WYNIKI ───── */}
-        <div style={{ position: "sticky", top: 74 }}>
-          <div className="doccard">
+        <div className="calc-results">
+          <div className="doccard calc-sum" aria-live="polite" aria-atomic="true">
             <div className="lbl">Łączny zasiłek macierzyński (brutto)</div>
-            <div className="big">{zl(res.totals.all)}</div>
+            <div className="big">{res.ok ? zl(res.totals.all) : "—"}</div>
             <div className="row">
               <div><div className="lbl">{L.A}</div><div className="val">{zl(res.totals.A)}</div><small>{res.totals.daysA} dni</small></div>
               <div><div className="lbl">{L.B}</div><div className="val">{zl(res.totals.B)}</div><small>{res.totals.daysB} dni</small></div>
-              <div><div className="lbl">ok. netto (−{net}% PIT)</div><div className="val">{zl(r2(res.totals.all * (1 - net / 100)))}</div></div>
+              <div><div className="lbl">ok. netto (−{pct(net)} PIT)</div><div className="val">{zl(r2(res.totals.all * (1 - net / 100)))}</div></div>
             </div>
           </div>
 
@@ -317,9 +335,9 @@ function Calculator() {
 
               {loss === "brak" && inp.mother.insured && (
                 <div className="card" data-guide="t-kalk-porownanie">
-                  <h2>Porównanie: 100% + {params.stawki.rodzicielski}% czy {params.stawki.jednolity}%?</h2>
+                  <h2>Porównanie: 100% + {pct(params.stawki.rodzicielski)} czy {pct(params.stawki.jednolity)}?</h2>
                   <div className="grid g2">
-                    {[{ r: inp.mother.jednolity ? alt : res, t: `100% / ${params.stawki.rodzicielski}%` }, { r: inp.mother.jednolity ? res : alt, t: `${params.stawki.jednolity}% przez cały okres` }].map((x) => (
+                    {[{ r: inp.mother.jednolity ? alt : res, t: `100% / ${pct(params.stawki.rodzicielski)}` }, { r: inp.mother.jednolity ? res : alt, t: `${pct(params.stawki.jednolity)} przez cały okres` }].map((x) => (
                       <div key={x.t} className="stat card flat">
                         <span className="l">{x.t}</span>
                         <span className="v">{zl(x.r.totals.A)}</span>
@@ -327,7 +345,7 @@ function Calculator() {
                       </div>
                     ))}
                   </div>
-                  <small>Przy pełnym wykorzystaniu urlopu łączna kwota jest zbliżona – {params.stawki.jednolity}% daje równe raty, 100% / {params.stawki.rodzicielski}% – więcej na początku.</small>
+                  <small>Przy pełnym wykorzystaniu urlopu łączna kwota jest zbliżona – {pct(params.stawki.jednolity)} daje równe raty, 100% / {pct(params.stawki.rodzicielski)} – więcej na początku.</small>
                 </div>
               )}
 
@@ -343,21 +361,21 @@ function Calculator() {
               <div className="card">
                 <h2>Co warto wiedzieć</h2>
                 <Notes res={{ warnings: res.warnings, info: res.info }} />
-                <div className="kv mt">
+                <dl className="kv mt">
                   {Object.entries(res.limits).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}
-                </div>
+                </dl>
               </div>
               <div className="row noprint">
-                <Link href="/wnioski" className="btn btn-primary" data-guide="kalk-wnioski"><Icon name="doc" size={18} /> Przygotuj wnioski</Link>
+                <Link href={`/wnioski?${new URLSearchParams({ date: inp.eventDate, children: String(inp.children), weeks: String(inp.mother.rodzicielskiWeeks), ...(inp.mother.jednolity ? { jednolity: "1" } : {}) })}`} className="btn btn-primary" data-guide="kalk-wnioski"><Icon name="doc" size={18} /> Przygotuj wnioski</Link>
                 <button className="btn btn-outline" data-guide="kalk-drukuj" onClick={() => window.print()}><Icon name="print" size={18} /> Drukuj plan</button>
                 <button className="btn btn-outline" data-guide="kalk-udostepnij" onClick={() => setSharing(true)}><Icon name="send" size={18} /> Udostępnij</button>
                 <button className="btn btn-ghost" data-guide="kalk-zapisz" onClick={savePlan}>Zapisz plan</button>
-                {saved && <span className="badge b-ok">Zapisano ({saved})</span>}
+                {saved && <span className="badge b-ok" role="status">Plan: {saved}</span>}
               </div>
               {sharing && <ShareDialog title="Przewodnik Rodzica – przysługujące zasiłki" text={shareText()} onClose={() => setSharing(false)} />}
             </>
           )}
-          <p className="hint mt">Wyliczenie ma charakter informacyjny i nie stanowi decyzji. Kwoty dzienne zaokrąglono do grosza; zasiłek za pełny miesiąc = 30 × stawka dzienna. Netto – orientacyjnie (zaliczka PIT {net}%, bez kwoty zmniejszającej).</p>
+          <p className="hint mt">Wyliczenie ma charakter informacyjny i nie stanowi decyzji. Kwoty dzienne zaokrąglono do grosza; zasiłek za pełny miesiąc = 30 × stawka dzienna. Netto – orientacyjnie (zaliczka PIT {pct(net)}, bez kwoty zmniejszającej). Zasiłek (poza ojcowskim) nie jest niższy niż {zl(params.kwoty.swiadczenieRodzicielskie)} netto miesięcznie.</p>
         </div>
       </div>
     </div>

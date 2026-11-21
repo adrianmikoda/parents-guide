@@ -144,6 +144,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const title = TITLES[path] ?? "Przewodnik Rodzica";
   const doLogout = async () => { await logout(); router.push("/"); };
   const active = (h: string) => path === h || path.startsWith(h + "/");
+  // dolny pasek: strony spoza paska należą do zakładki „Więcej”
+  const bottomActive = (h: string) => (h === "/wiecej" ? active(h) || !BOTTOM.some((b) => b.href !== "/wiecej" && active(b.href)) : active(h));
+  useEffect(() => { document.title = TITLES[path] ? `${TITLES[path]} – Przewodnik Rodzica` : "Przewodnik Rodzica – zasiłki z ubezpieczenia chorobowego"; }, [path]);
   return (
     <div className="shell">
       <a href="#tresc" className="skip">Przejdź do treści</a>
@@ -179,7 +182,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
           <div className="sep" />
-          <Link href="/admin" data-guide="nav:/admin" className={`navlink ${active("/admin") ? "active" : ""}`}>
+          <Link href="/admin" data-guide="nav:/admin" className={`navlink ${active("/admin") ? "active" : ""}`} aria-current={active("/admin") ? "page" : undefined}>
             <Icon name="settings" size={22} /><span className="nt"><b>Panel administracyjny</b><small>Parametry prawne</small></span>
           </Link>
           <div style={{ flex: 1 }} />
@@ -195,15 +198,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
         <div className="main">
-          {WITH_PAGEHEAD.includes(path) && <div className="pagehead"><h1>{title}</h1></div>}
-          <main className="content" id="tresc">{children}</main>
+          <main id="tresc">
+            {WITH_PAGEHEAD.includes(path) && <div className="pagehead"><h1>{title}</h1></div>}
+            <div className="content">{children}</div>
+          </main>
           <footer className="footer">Przewodnik Rodzica · wersja demonstracyjna (HackNation). Logowanie i dane z ZUS są symulowane, osoby są fikcyjne. Aplikacja nie jest serwisem ZUS.{guideOn === false && <> · <button className="linkbtn" onClick={() => setGuideEnabled(true)}>Włącz pomocnika „Gdzie kliknąć?”</button></>}</footer>
         </div>
       </div>
       <FloatingGuide />
       <nav className="bottomnav" aria-label="Nawigacja dolna">
         {BOTTOM.map((n) => (
-          <Link key={n.href} href={n.href} data-guide={`nav:${n.href}`} className={active(n.href) ? "active" : ""}>
+          <Link key={n.href} href={n.href} data-guide={`nav:${n.href}`} className={bottomActive(n.href) ? "active" : ""} aria-current={bottomActive(n.href) ? "page" : undefined}>
             <span className="ic"><Icon name={n.icon} size={22} /></span>
             {n.label}
           </Link>

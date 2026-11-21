@@ -114,6 +114,6 @@ export function matchGuide(question: string): { answer: string; steps: string[] 
   }
   if (!best) return { answer: "Nie znalazłem takiej funkcji. Spróbuj np.: „gdzie złożyć wniosek o urlop ojcowski”, „jak włączyć tryb ciemny”, „gdzie sprawdzę należności do uregulowania”.", steps: [] };
   const t = best.t;
-  const where = t.page === "*" ? "w nagłówku" : `na stronie „${PAGES[t.page] ?? t.page}”`;
+  const where = t.page === "*" ? "w nagłówku (na telefonie – w zakładce „Więcej”)" : `na stronie „${PAGES[t.page] ?? t.page}”`;
   return { answer: `**${t.label}** – ${t.hint} Znajdziesz to ${where}. Zaznaczam, gdzie kliknąć.`, steps: [t.id] };
 }

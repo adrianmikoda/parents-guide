@@ -208,7 +208,7 @@ export const CASES: TestCase[] = [
     rozstrzygniecie: { status: "przyznano", uzasadnienie: "Zasiłek w wysokości zasiłku macierzyńskiego do dnia porodu, następnie zasiłek macierzyński – wypłaca ZUS." },
     podstawa: { months: Array(12).fill(6100) },
     calc: { eventDate: "2027-03-01", mother: { rodzicielskiWeeks: 32 }, father: { insured: false, ojcowski: false, rodzicielskiWeeks: 0 } },
-    oczekiwane: "100% podstawy od rozwiązania umowy do porodu.",
+    oczekiwane: "Do dnia porodu: zasiłek w wysokości zasiłku macierzyńskiego (100% podstawy) – ten okres liczy zakładka „W ciąży”. Od porodu: zasiłek macierzyński za urlop macierzyński i rodzicielski – to pokazuje wyliczenie poniżej.",
   },
   {
     id: "S12",

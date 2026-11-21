@@ -1,6 +1,7 @@
 "use client";
+import { useId } from "react";
 import Icon from "./Icon";
-import { CalcResult, Period, diffDays, fmtDate, zl } from "@/lib/engine";
+import { CalcResult, Period, diffDays, fmtDate, pct, zl } from "@/lib/engine";
 
 export function Check({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: React.ReactNode; hint?: React.ReactNode }) {
   return (
@@ -11,34 +12,41 @@ export function Check({ checked, onChange, label, hint }: { checked: boolean; on
   );
 }
 
-export function Seg<T extends string>({ value, options, onChange, guide }: { value: T; options: [T, string][]; onChange: (v: T) => void; guide?: string }) {
+export function Seg<T extends string>({ value, options, onChange, guide, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; guide?: string; label?: string }) {
   return (
-    <div className="seg" role="tablist" data-guide={guide}>
+    <div className="seg" role="group" aria-label={label} data-guide={guide}>
       {options.map(([v, l]) => (
-        <button key={v} type="button" role="tab" aria-selected={value === v} className={value === v ? "on" : ""} onClick={() => onChange(v)}>{l}</button>
+        <button key={v} type="button" aria-pressed={value === v} className={value === v ? "on" : ""} onClick={() => onChange(v)}>{l}</button>
       ))}
     </div>
   );
 }
 
-export function Num({ label, value, onChange, step = 1, min, max, suffix, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; suffix?: string; hint?: string }) {
+export function Num({ label, value, onChange, step = 1, min, max, suffix, hint, error }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; suffix?: string; hint?: string; error?: string }) {
+  const id = useId();
+  const below = min !== undefined && value < min;
+  const above = max !== undefined && value > max;
+  const msg = error ?? (below ? `Wartość nie może być mniejsza niż ${min}.` : above ? `Wartość nie może być większa niż ${max}.` : undefined);
   return (
     <div className="field">
-      <label>{label}{suffix ? ` (${suffix})` : ""}</label>
-      <input className="input" type="number" inputMode="decimal" value={Number.isFinite(value) ? value : 0} step={step} min={min} max={max} onChange={(e) => onChange(parseFloat(e.target.value.replace(",", ".")) || 0)} />
-      {hint && <span className="hint">{hint}</span>}
+      <label htmlFor={id}>{label}{suffix ? ` (${suffix})` : ""}</label>
+      <input id={id} className="input" type="number" inputMode="decimal" value={Number.isFinite(value) ? value : 0} step={step} min={min} max={max}
+        aria-invalid={!!msg} aria-describedby={msg ? `${id}-err` : hint ? `${id}-hint` : undefined}
+        onChange={(e) => { const n = parseFloat(e.target.value.replace(",", ".")); onChange(Number.isFinite(n) ? n : 0); }} />
+      {msg ? <span id={`${id}-err`} className="hint" style={{ color: "var(--err)" }} role="alert">{msg}</span> : hint && <span id={`${id}-hint`} className="hint">{hint}</span>}
     </div>
   );
 }
 
 export function Slider({ label, value, onChange, min, max, unit = "tyg." }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number; unit?: string }) {
+  const id = useId();
   return (
     <div className="field">
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <label>{label}</label>
-        <b style={{ color: "var(--blue)" }}>{value} {unit}</b>
+        <label htmlFor={id}>{label}</label>
+        <b style={{ color: "var(--blue)" }}>{Math.min(value, max)} {unit}</b>
       </div>
-      <input type="range" min={min} max={Math.max(min, max)} value={Math.min(value, max)} onChange={(e) => onChange(parseInt(e.target.value, 10))} />
+      <input id={id} type="range" min={min} max={Math.max(min, max)} value={Math.min(value, max)} aria-valuetext={`${Math.min(value, max)} ${unit}`} onChange={(e) => onChange(parseInt(e.target.value, 10))} />
       <div className="row" style={{ justifyContent: "space-between" }}><small>{min}</small><small>{max}</small></div>
     </div>
   );
@@ -100,7 +108,7 @@ export function Timeline({ res }: { res: CalcResult }) {
                   const edge = left < 12 ? "start" : left + width > 88 ? "end" : "mid";
                   return (
                     <div key={i} className={`tl-seg ${p.workFraction > 0 ? "c-praca" : CLS[p.type]}`} style={{ left: `${left}%`, width: `${width}%` }}
-                      data-full={name} data-edge={edge} tabIndex={0} aria-label={`${p.label}: ${fmtDate(p.start)} – ${fmtDate(p.end)}`}
+                      data-full={name} data-edge={edge} tabIndex={0} role="img" aria-label={`${p.label}: ${fmtDate(p.start)} – ${fmtDate(p.end)}`}
                       onMouseEnter={markTruncated} onFocus={markTruncated}>
                       {width > 7 && <span className="tl-label">{name}</span>}
                     </div>
@@ -126,7 +134,7 @@ export function Timeline({ res }: { res: CalcResult }) {
 
 export function PeriodsTable({ res, netPct }: { res: CalcResult; netPct: number }) {
   return (
-    <div className="tablewrap">
+    <div className="tablewrap" tabIndex={0} role="region" aria-label="Szczegóły okresów – tabelę można przewijać w poziomie">
       <table>
         <thead>
           <tr><th>Kto</th><th>Okres</th><th>Od – do</th><th className="num">Dni</th><th className="num">Stawka</th><th className="num">Miesięcznie brutto</th><th className="num">ok. netto</th><th className="num">Razem brutto</th></tr>
@@ -135,10 +143,10 @@ export function PeriodsTable({ res, netPct }: { res: CalcResult; netPct: number 
           {res.periods.map((p, i) => (
             <tr key={i}>
               <td>{res.labels[p.who]}</td>
-              <td>{p.label}{p.workFraction > 0 && <><br /><small>praca {Math.round(p.workFraction * 100)}% etatu</small></>}{p.minApplied && <><br /><small>kwota minimalna</small></>}</td>
+              <td>{p.label}{p.workFraction > 0 && <><br /><small>praca {Math.round(p.workFraction * 100)}% etatu</small></>}{p.minApplied && <><br /><small>kwota minimalna (1000 zł netto)</small></>}</td>
               <td>{fmtDate(p.start)} – {fmtDate(p.end)}</td>
               <td className="num">{p.days}</td>
-              <td className="num">{p.rate}%</td>
+              <td className="num">{pct(p.rate)}</td>
               <td className="num">{zl(p.monthly)}</td>
               <td className="num">{zl(p.monthly * (1 - netPct / 100))}</td>
               <td className="num"><b>{zl(p.total)}</b></td>

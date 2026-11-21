@@ -7,16 +7,33 @@ import { Params } from "./params";
 
 export const r2 = (n: number) => Math.round(n * 100) / 100;
 const DAY = 86400000;
+/** Czy tekst to istniejąca data RRRR-MM-DD (odrzuca np. „2027-13-40” i niepełne wartości z pola daty). */
+export const isValidDate = (iso: unknown): iso is string => {
+  if (typeof iso !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  const t = new Date(iso + "T12:00:00Z");
+  return !Number.isNaN(t.getTime()) && t.toISOString().startsWith(iso);
+};
 export const addDays = (iso: string, d: number) => {
   const t = new Date(iso + "T12:00:00Z").getTime() + d * DAY;
-  return new Date(t).toISOString().slice(0, 10);
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : iso;
+};
+/** Ta sama data n miesięcy później (31.01 + 1 mies. → 28/29.02). */
+export const addMonths = (iso: string, months: number) => {
+  if (!isValidDate(iso)) return iso;
+  const [y, m, d] = iso.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m - 1 + months + 1, 0, 12)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last), 12)).toISOString().slice(0, 10);
 };
 export const diffDays = (a: string, b: string) =>
   Math.round((new Date(b + "T12:00:00Z").getTime() - new Date(a + "T12:00:00Z").getTime()) / DAY);
 export const fmtDate = (iso?: string) =>
-  iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+  iso && isValidDate(iso) ? new Date(iso + "T12:00:00Z").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 export const zl = (n: number) =>
-  n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "\u00a0zł"; // twarda spacja: „zł” nie przeskakuje do nowej linii
+  (Number.isFinite(n) ? n : 0).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł"; // twarda spacja: „zł” nie przeskakuje do nowej linii
+/** Procent po polsku: 81,5% (przecinek dziesiętny). */
+export const pct = (n: number) => `${n.toLocaleString("pl-PL", { maximumFractionDigits: 2 })}%`;
+/** Kwota brutto, która po potrąceniu zaliczki na PIT daje co najmniej `net`. */
+export const grossForNet = (net: number, pitPct: number) => Math.ceil((net / (1 - pitPct / 100)) * 100) / 100;
 
 /* ───────────────────────── Tytuły ubezpieczenia ───────────────────────── */
 
@@ -172,8 +189,11 @@ function mkPeriod(
   const days = f > 0 ? Math.round(baseDays / (1 - f)) : baseDays;
   let monthlyFull = r2((base * ratePct) / 100);
   let minApplied = false;
-  if (type === "rodzicielski" && monthlyFull < p.kwoty.swiadczenieRodzicielskie) {
-    monthlyFull = p.kwoty.swiadczenieRodzicielskie;
+  // art. 31 ust. 3a ustawy zasiłkowej: zasiłek macierzyński (każdy okres poza urlopem ojcowskim) po potrąceniu
+  // zaliczki na PIT nie może być niższy niż świadczenie rodzicielskie – minimum dotyczy kwoty netto
+  const minGross = grossForNet(p.kwoty.swiadczenieRodzicielskie, p.kwoty.zaliczkaPitProcent);
+  if (type !== "ojcowski" && monthlyFull < minGross) {
+    monthlyFull = minGross;
     minApplied = true;
   }
   const daily = r2((monthlyFull / 30) * (1 - f));
@@ -208,6 +228,19 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
   const M = inp.mother;
   const F = inp.father;
   const ev = inp.eventDate;
+  const empty = () => ({ ok: false, errors, warnings, info, periods, limits: {}, totals: { A: 0, B: 0, all: 0, daysA: 0, daysB: 0 }, deadlines, labels });
+
+  // ── Walidacja danych wejściowych ──
+  if (!isValidDate(ev)) {
+    errors.push(`Podaj poprawną datę ${adoptive ? "przyjęcia dziecka" : "porodu"} (dzień, miesiąc i rok), aby zobaczyć plan.`);
+    return empty();
+  }
+  for (const [par, who] of [[M, labels.A], [F, labels.B]] as const) {
+    if (par.insured && (!Number.isFinite(par.base) || par.base < 0))
+      errors.push(`${who}: podstawa wymiaru musi być kwotą 0 zł lub wyższą.`);
+    if (par.insured && par.base > 1_000_000) errors.push(`${who}: podstawa wymiaru wygląda na zbyt wysoką – sprawdź kwotę.`);
+  }
+  if (errors.length) return empty();
 
   // ── Wymiar urlopu rodzicielskiego (pula) ──
   let pool = inp.zaZyciem
@@ -233,15 +266,15 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
   if (!M.insured && !F.insured) {
     errors.push("Żaden z rodziców nie podlega ubezpieczeniu chorobowemu na dzień porodu/przyjęcia dziecka – zasiłek macierzyński nie przysługuje. Sprawdź świadczenie rodzicielskie (1000\u00a0zł) w gminie/ZUS.");
   }
-  if (errors.length)
-    return { ok: false, errors, warnings, info, periods, limits: {}, totals: { A: 0, B: 0, all: 0, daysA: 0, daysB: 0 }, deadlines, labels };
+  if (errors.length) return empty();
 
   // ── Etap 1: urlop macierzyński / na warunkach macierzyńskiego ──
   let cursorA = ev;
   let cursorB = ev;
   let rodzicielskiAllowed = true;
   const rateA_mac = M.jednolity && !adoptive ? S.jednolity : adoptive ? S.naWarunkachMacierzynskiego : S.macierzynski;
-  const rateA_rodz = M.jednolity && !adoptive ? S.jednolity : S.rodzicielski;
+  // stawka jednolita obejmuje cały okres macierzyńskiego i rodzicielskiego – także przy przysposobieniu i rodzinie zastępczej
+  const rateA_rodz = M.jednolity ? S.jednolity : S.rodzicielski;
   const rateAdoptJ = M.jednolity && adoptive ? S.jednolity : null;
 
   if (!adoptive) {
@@ -265,9 +298,17 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
         );
       } else {
         daysAfterBirth = deathDay + W.minDniPoZgonieDziecka;
-        info.push(`Zgon dziecka po upływie 8 tygodni życia: zasiłek zachowany przez ${W.minDniPoZgonieDziecka} dni od dnia zgonu.`);
       }
       const maxAfter = (macWeeks - before) * 7;
+      if (after8) {
+        info.push(
+          daysAfterBirth <= maxAfter
+            ? `Zgon dziecka po upływie 8 tygodni życia: zasiłek zachowany przez ${W.minDniPoZgonieDziecka} dni od dnia zgonu.`
+            : deathDay >= maxAfter
+              ? `Zgon nastąpił po zakończeniu urlopu macierzyńskiego (${macWeeks} tyg.) – zasiłek za ten urlop wypłacono w pełnym wymiarze. W sprawie urlopu rodzicielskiego skontaktuj się z pracodawcą lub ZUS.`
+              : `Zgon dziecka po upływie 8 tygodni życia: zasiłek przysługuje do końca wymiaru urlopu macierzyńskiego (${macWeeks} tyg.), czyli krócej niż ${W.minDniPoZgonieDziecka} dni od zgonu – wymiar się nie wydłuża.`
+        );
+      }
       daysAfterBirth = Math.min(daysAfterBirth, maxAfter);
       if (M.insured) {
         const start = addDays(ev, -before * 7);
@@ -391,26 +432,36 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
     }
     if (M.jednolity) {
       const fullA = maxPerParent;
-      info.push(`Stawka jednolita ${S.jednolity}% – wniosek najpóźniej ${p.terminy.jednolityWniosekDni} dni po ${adoptive ? "przyjęciu dziecka" : "porodzie"}, za cały okres macierzyńskiego i rodzicielskiego. Część ${reserved} tyg. drugiego rodzica jest płatna ${S.rodzicielski}%.`);
-      if (wA < fullA) warnings.push(`Przy stawce ${S.jednolity}% deklarujesz urlop rodzicielski w pełnym wymiarze (${fullA} tyg.). Jeśli wykorzystasz mniej, ZUS/płatnik przeliczy zasiłek (wyrównanie albo potrącenie nadwyżki). Jeśli nie skorzystasz z rodzicielskiego wcale – zasiłek za macierzyński zostanie wyrównany do 100%.`);
+      info.push(`Stawka jednolita ${pct(S.jednolity)} – wniosek najpóźniej ${p.terminy.jednolityWniosekDni} dni po ${adoptive ? "przyjęciu dziecka" : "porodzie"}, za cały okres macierzyńskiego i rodzicielskiego. Część ${reserved} tyg. drugiego rodzica jest płatna ${pct(S.rodzicielski)}.`);
+      if (wA < fullA) warnings.push(`Przy stawce ${pct(S.jednolity)} deklarujesz urlop rodzicielski w pełnym wymiarze (${fullA} tyg.). Jeśli wykorzystasz mniej, ZUS/płatnik przeliczy zasiłek (wyrównanie albo potrącenie nadwyżki). Jeśli nie skorzystasz z rodzicielskiego wcale – zasiłek za macierzyński zostanie wyrównany do 100%.`);
     }
     if (M.workFraction > 0 || F.workFraction > 0)
       info.push(`Łączenie urlopu rodzicielskiego z pracą (maks. ${p.wymiary.maxUlamekPracyPrzyRodzicielskim * 100}% etatu): urlop wydłuża się proporcjonalnie, a zasiłek jest proporcjonalnie niższy – łączna kwota zasiłku się nie zmienia. Dotyczy pracy u pracodawcy udzielającego urlopu.`);
     info.push(`Urlop rodzicielski można podzielić na maks. ${W.maksCzesciRodzicielskiego} części. Rodzice mogą korzystać z niego jednocześnie lub naprzemiennie.`);
     // termin wykorzystania
-    const eventYear = new Date(ev).getFullYear();
-    const lastDay = adoptive
-      ? `${eventYear + Math.max(0, W.adopcjaMaxWiekDziecka - (inp.childAgeYears ?? 0))}-12-31`
-      : `${eventYear + W.rodzicielskiDoKoncaRokuWiekuDziecka}-12-31`;
-    deadlines.push({ label: adoptive ? "Ostatni możliwy termin urlopu rodzicielskiego (orientacyjnie – do 14. r.ż. dziecka)" : "Urlop rodzicielski do końca roku, w którym dziecko kończy 6 lat", date: lastDay });
+    if (adoptive) {
+      const maxAge = inp.scenario === "adopcja" ? W.adopcjaMaxWiekDziecka : inp.odroczenieSzkolne ? W.zastepczaMaxWiekOdroczenie : W.zastepczaMaxWiekDziecka;
+      // znamy tylko wiek w latach – przyjmujemy, że dziecko kończy kolejny rok w dniu przyjęcia (wynik orientacyjny)
+      const lastDay = addDays(addMonths(ev, Math.max(0, maxAge - (inp.childAgeYears ?? 0)) * 12), -1);
+      deadlines.push({ label: `Ostatni możliwy termin urlopu rodzicielskiego (orientacyjnie – do ukończenia przez dziecko ${maxAge} lat; dokładną datę wyznaczają urodziny dziecka)`, date: lastDay });
+    } else {
+      const eventYear = Number(ev.slice(0, 4));
+      deadlines.push({ label: `Urlop rodzicielski do końca roku, w którym dziecko kończy ${W.rodzicielskiDoKoncaRokuWiekuDziecka} lat`, date: `${eventYear + W.rodzicielskiDoKoncaRokuWiekuDziecka}-12-31` });
+    }
   }
 
   // ── Etap 3: urlop ojcowski ──
   if (F.ojcowski && F.insured && inp.scenario !== "zastepcza" && !inp.stillbirth) {
-    const start = F.ojcowskiStart || ev;
-    const limit = addDays(ev, Math.round(W.ojcowskiDoMiesiacaZycia * 30.44));
-    if (start > limit) warnings.push(`Urlop ojcowski trzeba wykorzystać do ukończenia przez dziecko ${W.ojcowskiDoMiesiacaZycia} miesięcy (${adoptive ? "lub 12 mies. od uprawomocnienia przysposobienia, nie dłużej niż do 14. r.ż." : fmtDate(limit)}).`);
-    periods.push(mkPeriod("B", "ojcowski", "Urlop ojcowski", 0, start, S.ojcowski, F.base, p, 0, W.ojcowskiDni));
+    const start = isValidDate(F.ojcowskiStart) ? F.ojcowskiStart : ev;
+    const limit = addMonths(ev, W.ojcowskiDoMiesiacaZycia);
+    const lastStart = addDays(limit, -(W.ojcowskiDni - 1));
+    if (start < ev) {
+      warnings.push(`Urlop ojcowski może zacząć się najwcześniej w dniu ${adoptive ? "przyjęcia dziecka" : "porodu"} (${fmtDate(ev)}) – zmień datę początku. Okresu nie wliczono do sumy.`);
+    } else if (start > lastStart) {
+      warnings.push(`Urlop ojcowski trzeba wykorzystać do ukończenia przez dziecko ${W.ojcowskiDoMiesiacaZycia} miesięcy (${adoptive ? "przy przysposobieniu – 12 mies. od uprawomocnienia postanowienia, nie dłużej niż do 14. r.ż." : `do ${fmtDate(limit)}`}), więc musi zacząć się najpóźniej ${fmtDate(lastStart)}. Okresu nie wliczono do sumy.`);
+    } else {
+      periods.push(mkPeriod("B", "ojcowski", "Urlop ojcowski", 0, start, S.ojcowski, F.base, p, 0, W.ojcowskiDni));
+    }
     deadlines.push({ label: "Ostatni dzień na urlop ojcowski", date: limit });
     info.push(`Urlop ojcowski: ${W.ojcowskiDni} dni, jednorazowo albo w 2 częściach (min. ${W.ojcowskiMinCzesciDni} dni). Liczba dzieci nie wydłuża urlopu. Wniosek do pracodawcy min. ${p.terminy.wniosekOjcowskiDniPrzed} dni przed.`);
   } else if (F.ojcowski && inp.scenario === "zastepcza") {
@@ -419,9 +470,9 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
 
   // ── terminy ──
   if (!adoptive && !inp.stillbirth) {
-    deadlines.push({ label: `Wniosek o stawkę ${S.jednolity}% / o rodzicielski bezpośrednio po macierzyńskim`, date: addDays(ev, p.terminy.jednolityWniosekDni) });
+    deadlines.push({ label: `Wniosek o stawkę ${pct(S.jednolity)} / o rodzicielski bezpośrednio po macierzyńskim`, date: addDays(ev, p.terminy.jednolityWniosekDni) });
   }
-  if (adoptive) deadlines.push({ label: `Wniosek o stawkę ${S.jednolity}% (do 21 dni od przyjęcia dziecka)`, date: addDays(ev, p.terminy.jednolityWniosekDni) });
+  if (adoptive) deadlines.push({ label: `Wniosek o stawkę ${pct(S.jednolity)} (do 21 dni od przyjęcia dziecka)`, date: addDays(ev, p.terminy.jednolityWniosekDni) });
 
   const sum = (w: "A" | "B") => r2(periods.filter((x) => x.who === w).reduce((a, b) => a + b.total, 0));
   const days = (w: "A" | "B") => periods.filter((x) => x.who === w).reduce((a, b) => a + b.days, 0);
@@ -505,7 +556,7 @@ export function pregnancyBenefits(inp: PregnancyInput, p: Params): BenefitResult
     const details: string[] = [];
     details.push(`Okres wyczekiwania: ${wait} dni ${isVoluntary(inp.title) ? "(ubezpieczenie dobrowolne)" : "(ubezpieczenie obowiązkowe)"}. Ubezpieczenie od ${fmtDate(inp.insuranceStart)} – na dzień niezdolności: ${Math.max(insuredDays, 0)} dni.`);
     if (!waitingOk) details.push(`Zasiłek przysługuje dopiero od ${fmtDate(firstPaidDay)} (po upływie okresu wyczekiwania). Wcześniejsze dni niezdolności nie są płatne.`);
-    details.push(inp.kodB ? `Kod „B” na e-ZLA (ciąża) → zasiłek ${p.stawki.chorobowyCiaza}% podstawy.` : `Brak kodu „B” → zasiłek ${p.stawki.chorobowyStandard}% podstawy. Poproś lekarza o oznaczenie ciąży kodem B, jeśli niezdolność przypada w ciąży.`);
+    details.push(inp.kodB ? `Kod „B” na e-ZLA (ciąża) → zasiłek ${pct(p.stawki.chorobowyCiaza)} podstawy.` : `Brak kodu „B” → zasiłek ${pct(p.stawki.chorobowyStandard)} podstawy. Poproś lekarza o oznaczenie ciąży kodem B, jeśli niezdolność przypada w ciąży.`);
     let employerDays = 0;
     if (isEmployee(inp.title)) {
       const limit = inp.age50 ? C.wynagrodzenieChorobowe50plus : C.wynagrodzenieChorobowe;
@@ -536,11 +587,11 @@ export function pregnancyBenefits(inp: PregnancyInput, p: Params): BenefitResult
     name: "Świadczenie rehabilitacyjne",
     status: insured ? "informacja" : "nie_przysluguje",
     summary: insured
-      ? `Po wyczerpaniu ${C.okresZasilkowyCiaza} dni okresu zasiłkowego, jeśli dalsze leczenie lub rehabilitacja rokują odzyskanie zdolności do pracy – do ${C.rehabilitacyjneMaxMiesiace} mies. W ciąży: ${p.stawki.rehabilitacyjneCiaza}% podstawy.`
+      ? `Po wyczerpaniu ${C.okresZasilkowyCiaza} dni okresu zasiłkowego, jeśli dalsze leczenie lub rehabilitacja rokują odzyskanie zdolności do pracy – do ${C.rehabilitacyjneMaxMiesiace} mies. W ciąży: ${pct(p.stawki.rehabilitacyjneCiaza)} podstawy.`
       : "Nie przysługuje bez prawa do zasiłku chorobowego.",
     details: insured
       ? [
-          `Stawki: ${p.stawki.rehabilitacyjne90dni}% przez pierwsze 90 dni, potem ${p.stawki.rehabilitacyjnePozniej}%; w okresie ciąży ${p.stawki.rehabilitacyjneCiaza}%.`,
+          `Stawki: ${pct(p.stawki.rehabilitacyjne90dni)} przez pierwsze 90 dni, potem ${pct(p.stawki.rehabilitacyjnePozniej)}; w okresie ciąży ${pct(p.stawki.rehabilitacyjneCiaza)}.`,
           "Wniosek ZUS Np-7 + zaświadczenie lekarza prowadzącego (ZUS N-9) + wywiad zawodowy (N-10) – złóż ok. 6 tygodni przed końcem okresu zasiłkowego. O prawie decyduje lekarz orzecznik ZUS.",
           ...(inp.base > 0 ? [`Szacunkowo w ciąży: ${zl(r2((inp.base * p.stawki.rehabilitacyjneCiaza) / 100))} / mies. brutto.`] : []),
         ]
@@ -556,7 +607,7 @@ export function pregnancyBenefits(inp: PregnancyInput, p: Params): BenefitResult
     name: "Zasiłek w wysokości zasiłku macierzyńskiego",
     status: qualifies ? (tr === "naruszenie_prawa" ? "warunkowo" : "przysluguje") : tr === "brak" ? "informacja" : "nie_przysluguje",
     summary: qualifies
-      ? `Przysługuje od dnia następującego po rozwiązaniu umowy do dnia porodu: ${p.stawki.wysokoscMacierzynskiegoPoUtracie}% podstawy (${zl(r2((inp.base * p.stawki.wysokoscMacierzynskiegoPoUtracie) / 100))}/mies.).`
+      ? `Przysługuje od dnia następującego po rozwiązaniu umowy do dnia porodu: ${pct(p.stawki.wysokoscMacierzynskiegoPoUtracie)} podstawy (${zl(r2((inp.base * p.stawki.wysokoscMacierzynskiegoPoUtracie) / 100))}/mies.).`
       : tr === "brak"
         ? "Dotyczy pracownic, z którymi w ciąży rozwiązano umowę z powodu upadłości/likwidacji/śmierci pracodawcy lub z naruszeniem prawa."
         : "Rozwiązanie umowy z innej przyczyny nie daje prawa do tego zasiłku.",
@@ -632,7 +683,7 @@ export function assessRisks(r: RiskInput, p: Params): Risk[] {
   if (isVoluntary(r.title) && r.voluntaryPaidOnTime === false)
     out.push({ level: "wysokie", title: "Nieterminowa składka dobrowolna", text: "Nieopłacenie składki na dobrowolne ubezpieczenie chorobowe w terminie może oznaczać ustanie tego ubezpieczenia – a w konsekwencji brak prawa do zasiłków.", action: "Opłacaj składki w terminie. W uzasadnionych przypadkach złóż wniosek o przywrócenie terminu." });
   if (r.zlaWithoutB)
-    out.push({ level: "srednie", title: "Zwolnienie w ciąży bez kodu „B”", text: `Bez kodu B zasiłek wynosi ${p.stawki.chorobowyStandard}% zamiast ${p.stawki.chorobowyCiaza}%.`, action: "Poproś lekarza o korektę e-ZLA, jeśli niezdolność przypada w okresie ciąży." });
+    out.push({ level: "srednie", title: "Zwolnienie w ciąży bez kodu „B”", text: `Bez kodu B zasiłek wynosi ${pct(p.stawki.chorobowyStandard)} zamiast ${pct(p.stawki.chorobowyCiaza)}.`, action: "Poproś lekarza o korektę e-ZLA, jeśli niezdolność przypada w okresie ciąży." });
   if (r.workingDuringZla)
     out.push({ level: "wysokie", title: "Praca zarobkowa w trakcie zwolnienia", text: "Wykonywanie pracy zarobkowej lub wykorzystywanie zwolnienia niezgodnie z celem powoduje utratę prawa do zasiłku za cały okres zwolnienia.", action: "Powstrzymaj się od pracy zarobkowej w czasie e-ZLA (dotyczy też zleceń i działalności)." });
   out.push({ level: "niskie", title: "Termin na złożenie dokumentów", text: `Zasiłek nie przysługuje, jeśli dokumenty złożysz później niż ${p.chorobowy.terminZlozeniaMiesiace} mies. od ustania niezdolności do pracy/okresu zasiłku.`, action: "Złóż wnioski od razu – najlepiej przez PUE/eZUS." });

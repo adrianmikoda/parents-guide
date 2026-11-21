@@ -61,15 +61,15 @@ export default function Ciaza() {
           </div>
           <p className="muted">Zasiłek chorobowy, świadczenie rehabilitacyjne i zasiłek w wysokości zasiłku macierzyńskiego – także informacja, gdy prawo nie przysługuje.</p>
           <div className="grid" style={{ gap: 12 }}>
-            <div className="field"><label>Tytuł ubezpieczenia</label>
-              <select className="input" value={inp.title} onChange={(e) => set({ title: e.target.value as Title })}>
+            <div className="field"><label htmlFor="cz-1">Tytuł ubezpieczenia</label>
+              <select id="cz-1" className="input" value={inp.title} onChange={(e) => set({ title: e.target.value as Title })}>
                 {Object.entries(TITLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div className="grid g2">
-              <div className="field"><label>Ubezpieczenie chorobowe od</label><input className="input" type="date" value={inp.insuranceStart} onChange={(e) => set({ insuranceStart: e.target.value })} /></div>
-              <div className="field"><label>Przewidywana data porodu</label><input className="input" type="date" value={inp.dueDate} onChange={(e) => set({ dueDate: e.target.value })} /></div>
-              <div className="field"><label>Początek zwolnienia (e-ZLA)</label><input className="input" type="date" value={inp.zlaStart} onChange={(e) => set({ zlaStart: e.target.value })} /></div>
+              <div className="field"><label htmlFor="cz-2">Ubezpieczenie chorobowe od</label><input id="cz-2" className="input" type="date" value={inp.insuranceStart} onChange={(e) => set({ insuranceStart: e.target.value })} /></div>
+              <div className="field"><label htmlFor="cz-3">Przewidywana data porodu</label><input id="cz-3" className="input" type="date" value={inp.dueDate} onChange={(e) => set({ dueDate: e.target.value })} /></div>
+              <div className="field"><label htmlFor="cz-4">Początek zwolnienia (e-ZLA)</label><input id="cz-4" className="input" type="date" value={inp.zlaStart} onChange={(e) => set({ zlaStart: e.target.value })} /></div>
               <Num label="Długość zwolnienia" suffix="dni" value={inp.zlaDays} onChange={(v) => set({ zlaDays: v })} />
               <Num label="Podstawa wymiaru zasiłku" suffix="zł" value={inp.base} onChange={(v) => set({ base: v })} hint="przychód po potrąceniu 13,71%" />
               {inp.title !== "jdg_chorobowe" && inp.title !== "jdg_bez" && <Num label="Płatnik zgłasza do ubezp. chorobowego" suffix="osób" value={inp.insuredAtPayer} onChange={(v) => set({ insuredAtPayer: v })} hint={`> ${params.kwoty.progPlatnikaUbezpieczonych} → zasiłek wypłaca płatnik`} />}
@@ -81,20 +81,20 @@ export default function Ciaza() {
             {emp && <Check checked={inp.age50} onChange={(v) => set({ age50: v })} label="Ukończone 50 lat" />}
             {emp && (
               <div className="grid g2">
-                <div className="field"><label>Rodzaj umowy o pracę</label>
-                  <select className="input" value={inp.contractKind} onChange={(e) => set({ contractKind: e.target.value as PregnancyInput["contractKind"] })}>
+                <div className="field"><label htmlFor="cz-5">Rodzaj umowy o pracę</label>
+                  <select id="cz-5" className="input" value={inp.contractKind} onChange={(e) => set({ contractKind: e.target.value as PregnancyInput["contractKind"] })}>
                     <option value="nieokreslony">Na czas nieokreślony</option><option value="okreslony">Na czas określony</option><option value="probny">Na okres próbny</option>
                   </select>
                 </div>
-                <div className="field"><label>Rozwiązanie umowy w ciąży</label>
-                  <select className="input" value={inp.terminationReason} onChange={(e) => set({ terminationReason: e.target.value as PregnancyInput["terminationReason"] })}>
+                <div className="field"><label htmlFor="cz-6">Rozwiązanie umowy w ciąży</label>
+                  <select id="cz-6" className="input" value={inp.terminationReason} onChange={(e) => set({ terminationReason: e.target.value as PregnancyInput["terminationReason"] })}>
                     <option value="brak">Nie dotyczy</option><option value="upadlosc">Upadłość pracodawcy</option><option value="likwidacja">Likwidacja pracodawcy</option><option value="smierc_pracodawcy">Śmierć pracodawcy</option><option value="naruszenie_prawa">Z naruszeniem prawa (wyrok sądu)</option><option value="inne">Inna przyczyna</option>
                   </select>
                 </div>
-                {inp.terminationReason !== "brak" && <div className="field"><label>Data rozwiązania umowy</label><input className="input" type="date" value={inp.contractEnd ?? ""} onChange={(e) => set({ contractEnd: e.target.value })} /></div>}
+                {inp.terminationReason !== "brak" && <div className="field"><label htmlFor="cz-7">Data rozwiązania umowy</label><input id="cz-7" className="input" type="date" value={inp.contractEnd ?? ""} onChange={(e) => set({ contractEnd: e.target.value })} /></div>}
               </div>
             )}
-            {!emp && <div className="field"><label>Data zakończenia umowy / działalności (jeśli planowana)</label><input className="input" type="date" value={inp.contractEnd ?? ""} onChange={(e) => set({ contractEnd: e.target.value || undefined })} /></div>}
+            {!emp && <div className="field"><label htmlFor="cz-8">Data zakończenia umowy / działalności (jeśli planowana)</label><input id="cz-8" className="input" type="date" value={inp.contractEnd ?? ""} onChange={(e) => set({ contractEnd: e.target.value || undefined })} /></div>}
           </div>
         </div>
       </div>

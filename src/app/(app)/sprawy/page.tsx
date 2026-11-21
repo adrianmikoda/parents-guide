@@ -13,22 +13,35 @@ function Upload() {
   const [res, setRes] = useState<any>(null);
   const [file, setFile] = useState<File | null>(null);
   const [edit, setEdit] = useState<any>(null);
+  const [err, setErr] = useState("");
   const ref = useRef<HTMLInputElement>(null);
+  const MAX_MB = 4;
 
   async function send(f: File, ai = false) {
+    setErr("");
+    if (f.size === 0) { setErr("Plik jest pusty – wybierz inny dokument."); return; }
+    if (f.size > MAX_MB * 1024 * 1024) { setErr(`Plik jest za duży (${(f.size / 1024 / 1024).toFixed(1).replace(".", ",")} MB). Limit to ${MAX_MB} MB – zmniejsz plik lub zeskanuj mniej stron.`); return; }
+    if (!/\.(pdf|txt)$/i.test(f.name) && !["application/pdf", "text/plain"].includes(f.type)) { setErr("Obsługiwane są pliki PDF i TXT."); return; }
     setBusy(true);
     setFile(f);
-    const fd = new FormData();
-    fd.append("file", f);
-    const r = await fetch(`/api/documents/parse${ai ? "?ai=1" : ""}`, { method: "POST", body: fd }).then((r) => r.json());
-    setRes(r);
-    const x = r.result || {};
-    setEdit({ title: x.title || "umowa_o_prace", base: x.base || 0, monthly: (x.monthly || []).map((m: any) => m.amount).join("; "), birthDate: x.birthDate || "", children: x.children || 1, insuredAtPayer: x.insuredAtPayer ?? "", zaZyciem: !!x.zaZyciem });
-    setBusy(false);
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const resp = await fetch(`/api/documents/parse${ai ? "?ai=1" : ""}`, { method: "POST", body: fd });
+      const r = await resp.json().catch(() => ({ error: resp.status === 413 ? `Plik jest za duży (limit ${MAX_MB} MB).` : "Serwer zwrócił nieoczekiwaną odpowiedź." }));
+      if (!resp.ok || r.error) { setErr(r.error || "Nie udało się przeanalizować dokumentu."); setRes(null); return; }
+      setRes(r);
+      const x = r.result || {};
+      setEdit({ title: x.title || "", base: x.base || 0, monthly: (x.monthly || []).map((m: any) => m.amount).join("; "), birthDate: x.birthDate || "", children: x.children || 1, insuredAtPayer: x.insuredAtPayer ?? "", zaZyciem: !!x.zaZyciem });
+    } catch {
+      setErr("Brak połączenia z serwerem. Spróbuj ponownie.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const months = edit ? String(edit.monthly).split(/[;\n]/).map((s: string) => parseFloat(s.replace(/\s/g, "").replace(",", "."))).filter((n: number) => n > 0) : [];
-  const base = edit ? computeBase({ title: edit.title as Title, months, overrideBase: edit.base > 0 ? edit.base : undefined }, params) : null;
+  const base = edit?.title ? computeBase({ title: edit.title as Title, months, overrideBase: edit.base > 0 ? edit.base : undefined }, params) : null;
   const ins = ["umowa_o_prace", "zlecenie_chorobowe", "jdg_chorobowe"].includes(edit?.title);
 
   return (
@@ -38,6 +51,11 @@ function Upload() {
       <div
         className={`drop ${over ? "over" : ""}`}
         data-guide="sprawy-upload"
+        role="button"
+        tabIndex={0}
+        aria-label="Wybierz plik PDF lub TXT do analizy"
+        aria-describedby="drop-hint"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ref.current?.click(); } }}
         onClick={() => ref.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}
         onDragLeave={() => setOver(false)}
@@ -45,10 +63,11 @@ function Upload() {
       >
         <Icon name="upload" size={30} />
         <div><b>Przeciągnij plik lub kliknij, aby wybrać</b></div>
-        <small>PDF lub TXT, do 15 MB · plik jest przetwarzany tylko na potrzeby wyliczenia</small>
-        <input ref={ref} type="file" accept=".pdf,.txt,application/pdf,text/plain" hidden onChange={(e) => e.target.files?.[0] && send(e.target.files[0])} />
+        <small id="drop-hint">PDF lub TXT, do {MAX_MB} MB · plik jest przetwarzany tylko na potrzeby wyliczenia{" "}{res?.aiAvailable !== false ? "· przy skanach treść może zostać przekazana do modelu AI (Claude, Anthropic)" : ""}</small>
+        <input ref={ref} type="file" accept=".pdf,.txt,application/pdf,text/plain" hidden tabIndex={-1} onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ""; if (x) send(x); }} />
       </div>
-      {busy && <div className="row mt"><div className="spinner" /> Analiza dokumentu…</div>}
+      {busy && <div className="row mt" role="status"><div className="spinner" /> Analiza dokumentu…</div>}
+      {err && !busy && <div className="alert a-err mt" role="alert"><Icon name="alert" size={18} /><span>{err}</span></div>}
       {res && !busy && (
         <div className="mt">
           <div className="row" style={{ justifyContent: "space-between" }}>
@@ -60,15 +79,18 @@ function Upload() {
           {res.result.notes?.map((n: string, i: number) => <div key={i} className="alert a-info mt"><Icon name="info" size={18} />{n}</div>)}
           <h3 className="mt">Odczytane dane – sprawdź i popraw</h3>
           <div className="grid g3">
-            <div className="field"><label>Tytuł ubezpieczenia</label>
-              <select className="input" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })}>{Object.entries(TITLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            <div className="field"><label htmlFor="up-title">Tytuł ubezpieczenia</label>
+              <select id="up-title" className="input" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })}><option value="">— wybierz —</option>{Object.entries(TITLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
             </div>
-            <div className="field"><label>Podstawa wymiaru z dokumentu (zł)</label><input className="input" type="number" value={edit.base} onChange={(e) => setEdit({ ...edit, base: parseFloat(e.target.value) || 0 })} /></div>
-            <div className="field"><label>Liczba ubezpieczonych u płatnika</label><input className="input" type="number" value={edit.insuredAtPayer} onChange={(e) => setEdit({ ...edit, insuredAtPayer: e.target.value })} /></div>
-            <div className="field" style={{ gridColumn: "1 / -1" }}><label>Przychody z kolejnych miesięcy (oddziel średnikiem)</label><input className="input" value={edit.monthly} onChange={(e) => setEdit({ ...edit, monthly: e.target.value })} /></div>
-            <div className="field"><label>Data porodu</label><input className="input" type="date" value={edit.birthDate} onChange={(e) => setEdit({ ...edit, birthDate: e.target.value })} /></div>
-            <div className="field"><label>Liczba dzieci</label><input className="input" type="number" value={edit.children} onChange={(e) => setEdit({ ...edit, children: parseInt(e.target.value, 10) || 1 })} /></div>
+            <div className="field"><label htmlFor="up-base">Podstawa wymiaru z dokumentu (zł)</label><input id="up-base" className="input" type="number" min={0} value={edit.base} onChange={(e) => setEdit({ ...edit, base: Math.max(0, parseFloat(e.target.value) || 0) })} /></div>
+            <div className="field"><label htmlFor="up-ins">Liczba ubezpieczonych u płatnika</label><input id="up-ins" className="input" type="number" min={1} value={edit.insuredAtPayer} onChange={(e) => setEdit({ ...edit, insuredAtPayer: e.target.value })} /></div>
+            <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="up-months">Przychody z kolejnych miesięcy (oddziel średnikiem)</label><input id="up-months" className="input" value={edit.monthly} onChange={(e) => setEdit({ ...edit, monthly: e.target.value })} /></div>
+            <div className="field"><label htmlFor="up-date">Data porodu</label><input id="up-date" className="input" type="date" value={edit.birthDate} onChange={(e) => setEdit({ ...edit, birthDate: e.target.value })} /></div>
+            <div className="field"><label htmlFor="up-children">Liczba dzieci</label><input id="up-children" className="input" type="number" min={1} max={6} value={edit.children} onChange={(e) => setEdit({ ...edit, children: Math.min(6, Math.max(1, parseInt(e.target.value, 10) || 1)) })} /></div>
           </div>
+          {!edit.title ? (
+            <div className="alert a-warn mt"><Icon name="alert" size={18} /><span>Nie rozpoznano tytułu ubezpieczenia ani danych do zasiłku. Wybierz tytuł i uzupełnij dane ręcznie.</span></div>
+          ) : (
           <div className={`alert ${ins ? "a-ok" : "a-err"} mt`}>
             <Icon name={ins ? "check" : "x"} size={18} />
             <span>{ins ? <>Osoba <b>podlega ubezpieczeniu chorobowemu</b> ({TITLE_LABELS[edit.title as Title]}). Podstawa wymiaru: <b>{zl(base!.base)}</b>.</> : <>Brak ubezpieczenia chorobowego – zasiłki nie przysługują.</>}
@@ -76,6 +98,7 @@ function Upload() {
               {ins && <><br /><small>{base!.steps.join(" · ")}</small></>}
             </span>
           </div>
+          )}
           {ins && <Link className="btn btn-primary mt" href={`/kalkulator?base=${base!.base}${edit.birthDate ? `&date=${edit.birthDate}` : ""}&children=${edit.children}${edit.zaZyciem ? "&zaZyciem=1" : ""}`}><Icon name="calc" size={18} /> Przelicz zasiłek w kalkulatorze</Link>}
           <details className="mt"><summary>Podgląd odczytanego tekstu ({res.textLength} znaków)</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: 12, background: "var(--bg)", padding: 10, borderRadius: 10, maxHeight: 260, overflow: "auto" }}>{res.textPreview || "(brak warstwy tekstowej)"}</pre></details>
         </div>
@@ -88,6 +111,7 @@ export default function Sprawy() {
   const { params } = useApp();
   const [items, setItems] = useState<any[]>([]);
   const [cat, setCat] = useState("Wszystkie");
+  const [stat, setStat] = useState("wszystkie");
   const [sel, setSel] = useState<any>(null);
   useEffect(() => { api("/api/cases").then((r) => setItems(r.items)); }, []);
   useEffect(() => { if (sel?.case) api(`/api/cases/${sel.case.id}`).then(setSel); /* odśwież po zmianie parametrów */ // eslint-disable-next-line
@@ -98,9 +122,12 @@ export default function Sprawy() {
     <div>
       <Upload />
       <div className="section-title">Wbudowane sprawy testowe ({items.length})</div>
-      <div className="pill-tabs mb" data-guide="sprawy-kategorie">{cats.map((c) => <button key={c} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}</div>
+      <div className="pill-tabs mb" data-guide="sprawy-kategorie" role="group" aria-label="Kategoria">{cats.map((c) => <button key={c} aria-pressed={c === cat} className={c === cat ? "on" : ""} onClick={() => { setCat(c); setSel(null); }}>{c}</button>)}</div>
+      <div className="pill-tabs mb" role="group" aria-label="Rozstrzygnięcie">
+        {[["wszystkie", "Każde rozstrzygnięcie"], ["przyznano", "Przyznano"], ["czesciowo", "Częściowo"], ["odmowa", "Odmowa"]].map(([k, l]) => <button key={k} aria-pressed={k === stat} className={k === stat ? "on" : ""} onClick={() => { setStat(k); setSel(null); }}>{l}</button>)}
+      </div>
       <div className="grid g3 tiles">
-        {items.filter((i) => cat === "Wszystkie" || i.kategoria === cat).map((c) => (
+        {items.filter((i) => (cat === "Wszystkie" || i.kategoria === cat) && (stat === "wszystkie" || i.rozstrzygniecie.status === stat)).map((c) => (
           <button key={c.id} className="tile" onClick={async () => { setSel(await api(`/api/cases/${c.id}`)); setTimeout(() => document.getElementById("detail")?.scrollIntoView({ behavior: "smooth" }), 50); }}>
             <div className="row" style={{ justifyContent: "space-between" }}><span className="badge b-info">{c.id}</span><Status s={c.rozstrzygniecie.status} /></div>
             <b>{c.tytul}</b>

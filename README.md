@@ -105,7 +105,8 @@ Zmienne środowiskowe ustaw w pliku `.env.local` (wzór w `.env.example`) albo w
 
 | Zmienna | Domyślnie | Opis |
 |---|---|---|
-| `ADMIN_PIN` | `1234` | PIN do panelu `/admin`. **Zmień go przy publicznym wdrożeniu.** |
+| `ADMIN_PIN` | `1234` | PIN do panelu `/admin` (sprawdzany przez serwer). **Zmień go przy publicznym wdrożeniu.** |
+| `SESSION_SECRET` | wyprowadzony z `ADMIN_PIN` | Klucz podpisu ciasteczek sesji i kont. **Przy publicznym wdrożeniu ustaw długi, losowy ciąg znaków.** |
 | `ANTHROPIC_API_KEY` | – | Włącza funkcje AI (asystent, pomocnik, odczyt skanów PDF). Bez klucza aplikacja działa w trybie regułowym. |
 | `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model AI. |
 
@@ -141,7 +142,9 @@ src/
     ├── cases.ts                wbudowane sprawy testowe z oczekiwanym wynikiem
     ├── quiz.ts                 pytania ankiety (wspólne dla klienta i serwera)
     ├── users.ts                konta z ankiety + poprawki danych z ZUS
-    ├── session.ts              symulowana sesja (ciasteczko pp_session)
+    ├── session.ts              symulowana sesja (podpisane ciasteczko pp_session)
+    ├── cookie.ts               podpisane ciasteczka (HMAC)
+    ├── apps-client.ts          lista wysłanych wniosków w przeglądarce
     ├── guide.ts                rejestr miejsc dla pomocnika (atrybuty data-guide)
     ├── support.ts              organizacje pomocowe i oficjalne źródła
     └── ai.ts                   integracja z Claude (opcjonalna)
@@ -193,12 +196,14 @@ Wyniki AI są oznaczone w interfejsie fioletowym znacznikiem „AI” i nie traf
 | Dane | Gdzie | Uwagi |
 |---|---|---|
 | Parametry prawne + historia | `data/params.json`, `data/params-history.json` | edytowane w `/admin` |
-| Konta z ankiety | `data/users.json` | |
-| Poprawki danych z ZUS | `data/overrides.json` | zapisywane są tylko pola różne od ZUS |
-| Sesja | ciasteczko `pp_session` | 4 godziny |
+| Sesja | podpisane ciasteczko `pp_session` | 4 godziny, podpis HMAC – wartości nie da się podmienić |
+| Konto z ankiety | podpisane ciasteczko `pp_account` | tylko w tej przeglądarce, usuwane przy wylogowaniu |
+| Poprawki danych z ZUS | podpisane ciasteczko `pp_overrides` | tylko pola różne od ZUS, tylko w bieżącej sesji |
+| Wysłane wnioski, zapisany plan | `sessionStorage` przeglądarki | lista „Wysłane w tej sesji”; serwer tylko wystawia UPO |
+| Szkice formularzy (ankieta, wnioski) | `sessionStorage` przeglądarki | przetrwają odświeżenie strony |
 | Ustawienia wyglądu | `localStorage` przeglądarki | |
 
-Katalog `data/` tworzy się sam przy pierwszym zapisie. **Na hostingu tylko do odczytu (np. Vercel)** zapis na dysk się nie udaje i dane trzymane są w pamięci serwera. Znikają po pewnym czasie i po ponownym wdrożeniu.
+Dane użytkowników nie są przechowywane na serwerze, więc działają tak samo na hostingu serverless (np. Vercel, wiele instancji) i nie są widoczne dla innych odwiedzających. Katalog `data/` (parametry z panelu admina) tworzy się sam przy pierwszym zapisie; **na hostingu tylko do odczytu** parametry trzymane są w pamięci serwera i wracają do domyślnych po ponownym wdrożeniu.
 
 ---
 

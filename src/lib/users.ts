@@ -1,62 +1,46 @@
-import fs from "fs";
-import path from "path";
 import { randomUUID } from "crypto";
-import { TITLE_LABELS, addDays, type Title } from "./engine";
+import { TITLE_LABELS, addDays, isValidDate, type Title } from "./engine";
 import type { Persona, UstaniePowod } from "./mock";
 import { Answers, missingQuestions } from "./quiz";
+import { clearCookie, readCookie, writeCookie } from "./cookie";
 
 /**
- * Dane użytkowników:
- *  • konta założone w aplikacji (bez pobierania danych z ZUS) – odpowiedzi z ankiety → data/users.json
- *  • nadpisania danych pobranych z ZUS (konta testowe) – tylko zmienione pola → data/overrides.json
- * Na środowiskach tylko do odczytu magazyn działa w pamięci. W produkcji: baza danych + login.gov.pl.
+ * Dane użytkowników – trzymane w podpisanych ciasteczkach tej przeglądarki (demo bez bazy danych):
+ *  • konto założone w aplikacji (bez pobierania danych z ZUS) – odpowiedzi z ankiety,
+ *  • poprawki danych pobranych z ZUS (konta testowe) – tylko zmienione pola, ważne w bieżącej sesji.
+ * Dzięki temu dane nie giną między instancjami serwera i nie są widoczne dla innych odwiedzających.
+ * W produkcji: baza danych + login.gov.pl.
  */
 export type UserAccount = { id: string; createdAt: string; updatedAt: string; answers: Answers };
-type Override = { updatedAt: string; answers: Answers };
+type Override = { id: string; answers: Answers };
 
-/**
- * Plik JSON czytany przy każdym odczycie: każda trasa API ma własną kopię modułu, więc pamięć podręczna
- * w module dawałaby nieaktualne dane po zapisie z innej trasy. Pamięć służy tylko jako zapas, gdy dysk
- * jest niedostępny (np. serverless tylko do odczytu) – wspólna przez globalThis.
- */
-function jsonStore<T>(file: string) {
-  const FILE = path.join(process.cwd(), "data", file);
-  const g = globalThis as unknown as Record<string, Record<string, T> | undefined>;
-  const KEY = `__pp_store_${file}`;
-  let cur: Record<string, T> = {};
-  const load = () => {
-    try { cur = JSON.parse(fs.readFileSync(FILE, "utf8")); }
-    catch { cur = g[KEY] ?? {}; }
-    return cur;
-  };
-  const save = () => {
-    g[KEY] = cur;
-    try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(cur, null, 2)); } catch { /* tylko pamięć */ }
-  };
-  return { load, save };
-}
-const accounts = jsonStore<UserAccount>("users.json");
-const overrides = jsonStore<Override>("overrides.json");
+export const ACCOUNT_COOKIE = "pp_account";
+export const OVERRIDES_COOKIE = "pp_overrides";
+const MAX_AGE = 60 * 60 * 24 * 30;
 
 /* ── Konta z ankiety ── */
-export const getAccount = (id: string) => (id.startsWith("u-") ? accounts.load()[id] ?? null : null);
+export async function getAccount(id: string): Promise<UserAccount | null> {
+  if (!id.startsWith("u-")) return null;
+  const acc = await readCookie<UserAccount>(ACCOUNT_COOKIE);
+  return acc && acc.id === id ? acc : null;
+}
 
-export function saveAccount(answers: Answers, id?: string): UserAccount {
-  const all = accounts.load();
+export async function saveAccount(answers: Answers, id?: string): Promise<UserAccount> {
   const now = new Date().toISOString();
-  const acc: UserAccount = id && all[id] ? { ...all[id], answers, updatedAt: now } : { id: `u-${randomUUID().slice(0, 8)}`, createdAt: now, updatedAt: now, answers };
-  all[acc.id] = acc;
-  accounts.save();
+  const prev = id ? await getAccount(id) : null;
+  const acc: UserAccount = prev ? { ...prev, answers, updatedAt: now } : { id: `u-${randomUUID().slice(0, 8)}`, createdAt: now, updatedAt: now, answers };
+  await writeCookie(ACCOUNT_COOKIE, acc, MAX_AGE);
   return acc;
 }
 
-/* ── Nadpisania danych z ZUS ── */
-export const getOverride = (id: string) => overrides.load()[id]?.answers ?? null;
-export function saveOverride(id: string, answers: Answers) {
-  const all = overrides.load();
-  if (Object.keys(answers).length) all[id] = { updatedAt: new Date().toISOString(), answers };
-  else delete all[id];
-  overrides.save();
+/* ── Poprawki danych z ZUS ── */
+export async function getOverride(id: string): Promise<Answers | null> {
+  const ov = await readCookie<Override>(OVERRIDES_COOKIE);
+  return ov && ov.id === id ? ov.answers : null;
+}
+export async function saveOverride(id: string, answers: Answers) {
+  if (Object.keys(answers).length) await writeCookie(OVERRIDES_COOKIE, { id, answers } satisfies Override, MAX_AGE);
+  else await clearCookie(OVERRIDES_COOKIE);
 }
 
 /* ── Walidacja ── */
@@ -187,8 +171,8 @@ export function personaFromAccount(acc: UserAccount): Persona & { wlasne: true; 
 }
 
 /** Osoba z ZUS z nałożonymi nadpisaniami użytkownika (lista nadpisanych pól w `nadpisane`). */
-export function personaWithOverrides(p: Persona): Persona & { nadpisane?: (keyof Answers)[] } {
-  const ov = getOverride(p.id);
+export async function personaWithOverrides(p: Persona): Promise<Persona & { nadpisane?: (keyof Answers)[] }> {
+  const ov = await getOverride(p.id);
   if (!ov) return p;
   return { ...applyAnswers(p, ov), nadpisane: Object.keys(ov) as (keyof Answers)[] };
 }

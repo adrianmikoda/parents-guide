@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import { api, useApp } from "@/components/AppContext";
+import { loadApps, sendApp } from "@/lib/apps-client";
 import { fmtDate, zl } from "@/lib/engine";
 
 export default function Zus() {
@@ -22,7 +23,8 @@ export default function Zus() {
   const [cert, setCert] = useState({ rodzaj: "okresy", cel: "pracodawca", dostawa: "pue" });
   const [certs, setCerts] = useState<any[]>([]);
   const [certSent, setCertSent] = useState<any>(null);
-  const loadCerts = () => api("/api/applications").then((r) => setCerts((r.items || []).filter((a: any) => a.typ === "zaswiadczenie")));
+  const who = session?.id ?? "";
+  const loadCerts = () => setCerts(loadApps(who).filter((a) => a.typ === "zaswiadczenie"));
 
   useEffect(() => {
     if (!session) return;
@@ -105,7 +107,7 @@ export default function Zus() {
           <h2>Zaświadczenie o stanie rozliczeń (symulacja)</h2>
           <p className="muted">Dla przedsiębiorców kluczowe są należności do uregulowania na dzień powstania prawa do zasiłku – zasiłek zostanie wypłacony dopiero po ich uregulowaniu.</p>
           <div className="row">
-            <div className="field"><label>Na dzień</label><input className="input" type="date" value={debtDate} onChange={(e) => setDebtDate(e.target.value)} /></div>
+            <div className="field"><label htmlFor="zus-debt-date">Na dzień</label><input id="zus-debt-date" className="input" type="date" value={debtDate} onChange={(e) => setDebtDate(e.target.value)} /></div>
             <button className="btn btn-primary" style={{ alignSelf: "flex-end" }} onClick={async () => setDebt(await api(`/api/zus/debt?date=${debtDate}`))}>Wystaw zaświadczenie</button>
           </div>
           {debt && (
@@ -151,8 +153,10 @@ export default function Zus() {
                   <select id="cert-d" className="input" value={cert.dostawa} onChange={(e) => setCert({ ...cert, dostawa: e.target.value })}>{DOSTAWA.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
                 </div>
                 <button className="btn btn-primary" data-guide="zus-zaswiadczenie-wyslij" onClick={async () => {
-                  const r = await api("/api/applications", { typ: "zaswiadczenie", adresat: sel.od, dane: { rodzaj: sel.l, cel: CELE.find(([k]) => k === cert.cel)?.[1], odbior: DOSTAWA.find(([k]) => k === cert.dostawa)?.[1] } });
-                  setCertSent(r.application); loadCerts();
+                  try {
+                    setCertSent(await sendApp(who, { typ: "zaswiadczenie", adresat: sel.od, dane: { rodzaj: sel.l, cel: CELE.find(([k]) => k === cert.cel)?.[1], odbior: DOSTAWA.find(([k]) => k === cert.dostawa)?.[1] } }));
+                  } catch { setCertSent({ status: "Nie udało się wysłać – spróbuj ponownie", id: "—", upo: "" }); }
+                  loadCerts();
                 }}><Icon name="send" size={18} /> {sel.od.startsWith("ZUS") ? "Złóż wniosek do ZUS" : "Wyślij prośbę do pracodawcy"}</button>
                 {certSent && <div className="alert a-ok"><Icon name="check" size={18} /><span>{certSent.status}. Nr sprawy: <b>{certSent.id}</b> · {certSent.upo}</span></div>}
               </div>
@@ -172,13 +176,13 @@ export default function Zus() {
         <div className="card">
           <h2>Zapytaj ZUS (symulacja e-wizyty / wiadomości PUE)</h2>
           <div className="grid" style={{ gap: 10 }}>
-            <div className="field"><label>Temat</label>
-              <select className="input" value={q.temat} onChange={(e) => setQ({ ...q, temat: e.target.value })}>
+            <div className="field"><label htmlFor="zus-pytanie-temat">Temat</label>
+              <select id="zus-pytanie-temat" className="input" value={q.temat} onChange={(e) => setQ({ ...q, temat: e.target.value })}>
                 {["Zasiłek macierzyński", "Zasiłek chorobowy w ciąży", "Podstawa wymiaru", "Należności do uregulowania / układ ratalny", "Weryfikacja danych na koncie", "Inne"].map((t) => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div className="field"><label htmlFor="zus-pytanie-tresc">Treść</label><textarea id="zus-pytanie-tresc" className="input" rows={5} autoFocus={focusAsk} ref={(el) => { if (el && focusAsk) { el.scrollIntoView({ block: "center" }); setFocusAsk(false); } }} value={q.tresc} onChange={(e) => setQ({ ...q, tresc: e.target.value })} placeholder="Opisz swoją wątpliwość…" /></div>
-            <button className="btn btn-primary" disabled={!q.tresc.trim()} onClick={async () => setQSent((await api("/api/applications", { typ: "pytanie_pue", dane: q })).application)}><Icon name="send" size={18} /> Wyślij</button>
+            <button className="btn btn-primary" disabled={!q.tresc.trim()} onClick={async () => { try { setQSent(await sendApp(who, { typ: "pytanie_pue", dane: q })); } catch { setQSent({ status: "Nie udało się wysłać – spróbuj ponownie", id: "—" }); } }}><Icon name="send" size={18} /> Wyślij</button>
             {qSent && <div className="alert a-ok"><Icon name="check" size={18} /><span>{qSent.status}. Nr sprawy: {qSent.id}</span></div>}
           </div>
           <h3 className="mt2">Wiadomości z ZUS</h3>

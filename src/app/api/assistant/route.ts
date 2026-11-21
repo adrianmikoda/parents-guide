@@ -1,5 +1,6 @@
 import { aiEnabled, askAssistant } from "@/lib/ai";
 import { Params } from "@/lib/params";
+import { allow, clientKey } from "@/lib/ratelimit";
 import { currentPersona, json } from "@/lib/session";
 import { getParams } from "@/lib/store";
 
@@ -31,10 +32,18 @@ function ruleAnswer(q: string, p: Params): string {
 }
 
 export async function POST(req: Request) {
-  const { messages } = (await req.json()) as { messages: { role: "user" | "assistant"; content: string }[] };
+  const body = (await req.json().catch(() => ({}))) as { messages?: { role: "user" | "assistant"; content: string }[] };
+  // tylko ostatnie wiadomości, przycięte – ogranicza koszt i nadużycia
+  const messages = (Array.isArray(body.messages) ? body.messages : [])
+    .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .slice(-10)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
+  if (!messages.length || messages[0].role !== "user") messages.unshift({ role: "user", content: "Dzień dobry" });
   const p = getParams();
   const last = messages.filter((m) => m.role === "user").at(-1)?.content || "";
   const me = await currentPersona(req);
+  if (aiEnabled() && !allow(`assistant:${clientKey(req)}`, 20, 10 * 60_000))
+    return json({ answer: `${ruleAnswer(last, p)}\n\n(Przekroczono limit pytań do AI – 20 na 10 minut. Teraz odpowiadam z bazy reguł.)`, mode: "reguly", limited: true });
   if (aiEnabled()) {
     try {
       const ctx = me ? `Tytuł ubezpieczenia: ${me.tytulOpis}; przewidywany poród: ${me.ciaza?.przewidywanyPorod ?? "brak danych"}; płatnik zgłasza ${me.platnik?.liczbaUbezpieczonych ?? "n/d"} ubezpieczonych; należności do uregulowania: ${me.zadluzenie}\u00a0zł.` : undefined;

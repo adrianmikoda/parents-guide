@@ -1,9 +1,9 @@
 import { currentPersona, json } from "@/lib/session";
 
-type App = { id: string; upo: string; typ: string; adresat: string; dane: Record<string, unknown>; status: string; zlozono: string; osoba: string };
-const g = globalThis as unknown as { __apps?: App[] };
-const store = () => (g.__apps ??= []);
-
+/**
+ * Symulowana wysyłka wniosków. Serwer niczego nie przechowuje – zwraca UPO, a listę „Wysłane w tej sesji”
+ * trzyma przeglądarka (sessionStorage). Dzięki temu wnioski jednej osoby nie są widoczne dla innych.
+ */
 const ADRESAT: Record<string, string> = {
   urlop_macierzynski: "Pracodawca",
   urlop_rodzicielski: "Pracodawca",
@@ -15,33 +15,42 @@ const ADRESAT: Record<string, string> = {
   odpis_aktu: "Urząd Stanu Cywilnego (rejestr stanu cywilnego)",
   pytanie_pue: "ZUS – Centrum Obsługi Telefonicznej / e-wizyta",
   zaswiadczenie: "ZUS (PUE/eZUS)",
+  plan_urlopow: "Moje dokumenty (zapis planu)",
+  urlop_na_warunkach: "Pracodawca",
 };
+const MAX_BODY = 64 * 1024;
 
-/** GET – wnioski złożone w tej sesji (symulacja skrzynki) */
-export async function GET(req: Request) {
-  const p = await currentPersona(req);
-  return json({ items: store().filter((a) => !p || a.osoba === p.id).slice().reverse() });
+/** GET – wysłane wnioski są przechowywane w przeglądarce, nie na serwerze */
+export async function GET() {
+  return json({ items: [], info: "Lista wysłanych wniosków jest przechowywana w przeglądarce (sessionStorage)." });
 }
 
 /** POST {typ, dane, adresat?} – symulacja wysłania wniosku do pracodawcy / ZUS / USC; zwraca UPO */
 export async function POST(req: Request) {
+  const raw = await req.text();
+  if (raw.length > MAX_BODY) return json({ error: "Wniosek jest za duży." }, 413);
+  let body: { typ?: unknown; dane?: unknown; adresat?: unknown };
+  try { body = JSON.parse(raw); } catch { return json({ error: "Niepoprawne dane wniosku." }, 400); }
+  const typ = typeof body.typ === "string" ? body.typ : "";
+  if (!ADRESAT[typ]) return json({ error: "Nieznany typ wniosku." }, 400);
+  const adresat = typeof body.adresat === "string" && body.adresat.trim() ? body.adresat.trim().slice(0, 160) : ADRESAT[typ];
+  const dane = body.dane && typeof body.dane === "object" ? (body.dane as Record<string, unknown>) : {};
   const p = await currentPersona(req);
-  const { typ, dane, adresat } = await req.json();
-  if (!typ) return json({ error: "Brak typu wniosku" }, 400);
   const now = new Date();
-  const id = `W-${now.getTime().toString(36).toUpperCase()}`;
-  const app: App = {
-    id,
-    upo: `UPO/${now.toISOString().slice(0, 10).replace(/-/g, "")}/${Math.floor(Math.random() * 900000 + 100000)}`,
-    typ,
-    adresat: adresat || ADRESAT[typ] || "ZUS",
-    dane: dane || {},
-    status: typ === "pytanie_pue" ? "Przekazano konsultantowi – odpowiedź w ciągu 2 dni roboczych (symulacja)"
-      : typ === "zaswiadczenie" ? (String(adresat || "").startsWith("ZUS") ? "Przyjęto – zaświadczenie zostanie wydane bez zbędnej zwłoki, najpóźniej w ciągu 7 dni (symulacja)" : "Wysłano prośbę do płatnika składek (symulacja)")
-      : "Doręczono (symulacja)",
-    zlozono: now.toISOString(),
-    osoba: p?.id || "anonim",
-  };
-  store().push(app);
-  return json({ ok: true, application: app });
+  return json({
+    ok: true,
+    application: {
+      id: `W-${now.getTime().toString(36).toUpperCase()}`,
+      upo: `UPO/${now.toISOString().slice(0, 10).replace(/-/g, "")}/${Math.floor(Math.random() * 900000 + 100000)}`,
+      typ,
+      adresat,
+      dane,
+      status: typ === "pytanie_pue" ? "Przekazano konsultantowi – odpowiedź w ciągu 2 dni roboczych (symulacja)"
+        : typ === "zaswiadczenie" ? (adresat.startsWith("ZUS") ? "Przyjęto – zaświadczenie zostanie wydane bez zbędnej zwłoki, najpóźniej w ciągu 7 dni (symulacja)" : "Wysłano prośbę do płatnika składek (symulacja)")
+        : typ === "plan_urlopow" ? "Zapisano w tej przeglądarce (symulacja)"
+        : "Doręczono (symulacja)",
+      zlozono: now.toISOString(),
+      osoba: p?.id || "gosc",
+    },
+  });
 }

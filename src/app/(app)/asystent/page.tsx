@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
+import { useDialog } from "@/components/useDialog";
 import { api } from "@/components/AppContext";
 import { AiBadge } from "@/components/ui";
 import Markdown from "@/components/Markdown";
@@ -25,7 +26,9 @@ export default function Asystent() {
   const [typing, setTyping] = useState<number | null>(null); // indeks animowanej wiadomości
   const [shown, setShown] = useState(0);
   const end = useRef<HTMLDivElement>(null);
-  const [human, setHuman] = useState(false); // okno „Połącz z człowiekiem”
+  const [human, setHuman] = useState(false);
+  const humanBox = useRef<HTMLDivElement>(null);
+  useDialog(humanBox, () => setHuman(false), human); // okno „Połącz z człowiekiem”
   const [ticket, setTicket] = useState<string | null>(null);
 
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs.length, busy]);
@@ -116,8 +119,8 @@ W pilnej sprawie zadzwoń do Centrum Obsługi Telefonicznej ZUS: **22 560 16 00*
       </form>
 
       {human && (
-        <div className="modal-bg" role="dialog" aria-modal aria-labelledby="human-title" onClick={(e) => { if (e.target === e.currentTarget) setHuman(false); }} onKeyDown={(e) => { if (e.key === "Escape") setHuman(false); }}>
-          <div className="modal">
+        <div className="modal-bg" role="dialog" aria-modal aria-labelledby="human-title" onClick={(e) => { if (e.target === e.currentTarget) setHuman(false); }}>
+          <div className="modal" ref={humanBox} tabIndex={-1}>
             <div className="card-head"><h2 id="human-title" style={{ margin: 0 }}>Połącz z człowiekiem</h2><button className="guide-x" aria-label="Zamknij" onClick={() => setHuman(false)}><Icon name="x" size={20} /></button></div>
             <p className="muted">Wybierz, jak chcesz porozmawiać z konsultantem ZUS.</p>
             <div className="list">

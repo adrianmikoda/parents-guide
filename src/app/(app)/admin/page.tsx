@@ -10,6 +10,8 @@ export default function Admin() {
   const { reloadParams } = useApp();
   const [pin, setPin] = useState("");
   const [ok, setOk] = useState(false);
+  const [pinErr, setPinErr] = useState("");
+  const [checking, setChecking] = useState(false);
   const [p, setP] = useState<Params | null>(null);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<any[]>([]);
@@ -35,11 +37,19 @@ export default function Admin() {
   if (!ok)
     return (
       <div className="card" data-guide="t-admin-pin" style={{ maxWidth: 440, margin: "0 auto" }}>
-        <h2 className="icon-title"><Icon name="settings" /> Panel administracyjny</h2>
-        <p className="muted">Zmiana parametrów prawnych (stawki, wymiary, terminy) bez zmiany kodu – np. po nowelizacji przepisów. Demo: PIN <b>1234</b> (zmienny przez ADMIN_PIN).</p>
-        <form onSubmit={(e) => { e.preventDefault(); setOk(true); }} className="grid" style={{ gap: 10 }}>
-          <input className="input" type="password" inputMode="numeric" placeholder="PIN" value={pin} onChange={(e) => setPin(e.target.value)} aria-label="PIN" />
-          <button className="btn btn-primary">Wejdź</button>
+        <h1 className="icon-title" style={{ fontSize: 24 }}><Icon name="settings" /> Panel administracyjny</h1>
+        <p className="muted">Zmiana parametrów prawnych (stawki, wymiary, terminy) bez zmiany kodu – np. po nowelizacji przepisów. PIN ustawia administrator wdrożenia (zmienna ADMIN_PIN).</p>
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          setPinErr(""); setChecking(true);
+          const r = await fetch("/api/params", { method: "POST", headers: { "x-admin-pin": pin } }).catch(() => null);
+          setChecking(false);
+          if (r?.ok) setOk(true); else setPinErr(r ? "Nieprawidłowy PIN." : "Brak połączenia z serwerem. Spróbuj ponownie.");
+        }} className="grid" style={{ gap: 10 }}>
+          <label htmlFor="admin-pin" className="lbl2">PIN administratora</label>
+          <input id="admin-pin" className="input" type="password" inputMode="numeric" autoComplete="off" value={pin} aria-invalid={!!pinErr} aria-describedby={pinErr ? "admin-pin-err" : undefined} onChange={(e) => { setPin(e.target.value); setPinErr(""); }} />
+          {pinErr && <div id="admin-pin-err" className="alert a-err" role="alert"><Icon name="alert" size={18} /><span>{pinErr}</span></div>}
+          <button className="btn btn-primary" disabled={checking || !pin}>{checking ? "Sprawdzanie…" : "Wejdź"}</button>
         </form>
       </div>
     );
@@ -65,11 +75,11 @@ export default function Admin() {
           <div className="grid g2">
             {Object.entries(p[g] as Record<string, unknown>).map(([k, v]) => (
               <div key={k} className="field">
-                <label>{labels[`${g}.${k}`] || k}</label>
+                <label htmlFor={`adm-${g}-${k}`}>{labels[`${g}.${k}`] || k}</label>
                 {Array.isArray(v) ? (
-                  <input className="input" value={(v as number[]).join(", ")} onChange={(e) => setVal(g, k, e.target.value.split(",").map((x) => parseFloat(x.trim())).filter((x) => !isNaN(x)))} />
+                  <input id={`adm-${g}-${k}`} className="input" value={(v as number[]).join(", ")} onChange={(e) => setVal(g, k, e.target.value.split(",").map((x) => parseFloat(x.trim())).filter((x) => !isNaN(x)))} />
                 ) : (
-                  <input className="input" type="number" step="any" value={v as number} onChange={(e) => setVal(g, k, parseFloat(e.target.value))} />
+                  <input id={`adm-${g}-${k}`} className="input" type="number" step="any" value={v as number} onChange={(e) => setVal(g, k, parseFloat(e.target.value))} />
                 )}
                 <span className="hint">{g}.{k}</span>
               </div>

@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Icon from "@/components/Icon";
 import { A11yButtons, Brand, Logo } from "@/components/Shell";
 import { offerTutorial } from "@/components/FloatingGuide";
-import { api, useApp } from "@/components/AppContext";
+import { useApp } from "@/components/AppContext";
+import { useDialog } from "@/components/useDialog";
 
 function FakeQR({ seed = 7, large = false }: { seed?: number; large?: boolean }) {
   const n = 25;
@@ -68,12 +69,9 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
   const [seed, setSeed] = useState(11);
   const [left, setLeft] = useState(QR_TTL);
   const [scanned, setScanned] = useState(false);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const [notice, setNotice] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  useDialog(box, onClose);
 
   useEffect(() => {
     if (view !== "qr") return;
@@ -83,14 +81,14 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
 
   // kod wygasł → nowy kod
   useEffect(() => {
-    if (left === 0) { setSeed((s) => s + 13); setScanned(false); setLeft(QR_TTL); }
+    if (left === 0) { setSeed((s) => s + 13); setScanned(false); setLeft(QR_TTL); setNotice("Poprzedni kod wygasł – wygenerowano nowy."); }
   }, [left]);
 
-  function openQr() { setView("qr"); setLeft(QR_TTL); setSeed((s) => s + 13); setScanned(false); }
+  function openQr(msg = "") { setView("qr"); setLeft(QR_TTL); setSeed((s) => s + 13); setScanned(false); setNotice(msg); }
 
   return (
     <div className="modal-bg" role="dialog" aria-modal aria-labelledby="zl-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal zus-login">
+      <div className="modal zus-login" ref={box} tabIndex={-1}>
         <div className="zl-top">
           <span className="badge b-warn">MAKIETA · HackNation</span>
           <button className="zl-x" onClick={onClose} aria-label="Zamknij"><Icon name="x" size={20} /></button>
@@ -102,13 +100,14 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
             <p className="muted" style={{ marginTop: 0 }}>Symulacja ekranu logowania do Platformy Usług Elektronicznych.</p>
             <MockNotice />
 
-            <button className="btn btn-primary btn-block mt" onClick={openQr} autoFocus>
+            <button className="btn btn-primary btn-block mt" onClick={() => openQr()} autoFocus>
               <Icon name="shield" size={20} /> Zaloguj z mObywatel
             </button>
             <div className="row" style={{ gap: 8, marginTop: 8 }}>
-              <button className="btn btn-outline" style={{ flex: "1 1 160px" }} disabled title="Niedostępne w makiecie">Profil Zaufany</button>
-              <button className="btn btn-outline" style={{ flex: "1 1 160px" }} disabled title="Niedostępne w makiecie">Bankowość elektroniczna</button>
+              <button className="btn btn-outline" style={{ flex: "1 1 160px" }} disabled aria-describedby="zl-off">Profil Zaufany</button>
+              <button className="btn btn-outline" style={{ flex: "1 1 160px" }} disabled aria-describedby="zl-off">Bankowość elektroniczna</button>
             </div>
+            <small id="zl-off" style={{ display: "block", marginTop: 6 }}>Profil Zaufany, bankowość elektroniczna i przypomnienie hasła są niedostępne w makiecie.</small>
 
             <div className="or-sep"><span>lub login i hasło</span></div>
 
@@ -127,7 +126,7 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
               </div>
               {formErr && <div className="alert a-err" role="alert"><Icon name="alert" size={18} /> <span>{formErr}</span></div>}
               <div className="row" style={{ justifyContent: "space-between" }}>
-                <button type="button" className="btn btn-ghost" style={{ paddingLeft: 0 }} disabled>Nie pamiętam hasła</button>
+                <button type="button" className="btn btn-ghost" style={{ paddingLeft: 0 }} disabled aria-describedby="zl-off">Nie pamiętam hasła</button>
                 <button type="submit" className="btn btn-cta">Zaloguj <span className="chev">›</span></button>
               </div>
             </form>
@@ -144,7 +143,9 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
                   {scanned && <div className="qr-ok"><Icon name="check" size={44} /></div>}
                 </div>
                 <small>Kod ważny jeszcze <b>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</b></small>
-                <button className="btn btn-ghost" style={{ minHeight: 32, padding: "4px 8px", fontSize: 14 }} onClick={openQr}>Odśwież kod</button>
+                <button className="btn btn-ghost" style={{ minHeight: 32, padding: "4px 8px", fontSize: 14 }} onClick={() => openQr("Wygenerowano nowy kod.")}>Odśwież kod</button>
+                <span className="sr" role="status" aria-live="polite">{notice}</span>
+                {notice && <small aria-hidden>{notice}</small>}
               </div>
               <div className="steps" style={{ fontSize: 14.5 }}>
                 <div className="step"><span>Otwórz aplikację <b>mObywatel</b> w telefonie</span></div>
@@ -158,7 +159,7 @@ function ZusLoginModal({ accounts, onClose, onPick }: { accounts: Acc[]; onClose
                 <>
                   <b>Nie masz pod ręką telefonu? To tylko makieta.</b>
                   <br /><small>Zasymuluj zeskanowanie kodu i wybierz, jako kto chcesz się zalogować.</small>
-                  <div className="mt"><button className="btn btn-primary" onClick={() => setScanned(true)}>Symuluj zeskanowanie kodu <span className="chev">›</span></button></div>
+                  <div className="mt"><button className="btn btn-primary" onClick={() => { setScanned(true); setNotice("Kod zeskanowany – wybierz konto testowe."); }}>Symuluj zeskanowanie kodu <span className="chev">›</span></button></div>
                 </>
               ) : (
                 <>
@@ -179,22 +180,35 @@ export default function Login() {
   const router = useRouter();
   const { refresh, session } = useApp();
   const [accounts, setAccounts] = useState<Acc[]>([]);
-  const [step, setStep] = useState<null | { acc: Acc; phase: number }>(null);
+  const [step, setStep] = useState<null | { acc: Acc; phase: number; error?: string }>(null);
   const [zusOpen, setZusOpen] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+  const stepBox = useRef<HTMLDivElement>(null);
+  useDialog(stepBox, step?.phase === 3 ? () => setStep(null) : undefined, !!step);
 
-  useEffect(() => { api("/api/auth/mobywatel").then((r) => setAccounts(r.accounts)); }, []);
+  const loadAccounts = () => {
+    setLoadErr("");
+    fetch("/api/auth/mobywatel").then((r) => (r.ok ? r.json() : Promise.reject())).then((r) => setAccounts(r.accounts ?? [])).catch(() => setLoadErr("Nie udało się wczytać kont testowych."));
+  };
+  useEffect(loadAccounts, []);
 
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   async function login(acc: Acc) {
     setZusOpen(false);
     setStep({ acc, phase: 0 });
-    await new Promise((r) => setTimeout(r, 1200));
+    await wait(1200);
     setStep({ acc, phase: 1 });
-    await api("/api/auth/mobywatel", { personaId: acc.id });
-    await new Promise((r) => setTimeout(r, 900));
-    setStep({ acc, phase: 2 });
-    await refresh();
-    offerTutorial();
-    router.push("/pulpit");
+    try {
+      const r = await fetch("/api/auth/mobywatel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ personaId: acc.id }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Serwer odrzucił logowanie.");
+      await wait(900);
+      setStep({ acc, phase: 2 });
+      await refresh();
+      offerTutorial();
+      router.push("/pulpit");
+    } catch (e) {
+      setStep({ acc, phase: 3, error: e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Brak połączenia z serwerem." });
+    }
   }
 
   return (
@@ -242,6 +256,7 @@ export default function Login() {
           <div className="or-sep"><span>albo szybkie logowanie</span></div>
           <div className="lbl2">Konta testowe (symulacja)</div>
           <p className="hint" style={{ margin: "4px 0 10px" }}>Fikcyjne osoby z przykładowymi danymi z ZUS. Kliknij, aby od razu się zalogować.</p>
+          {loadErr && <div className="alert a-err mb" role="alert"><Icon name="alert" size={18} /><span>{loadErr} <button className="linkbtn" onClick={loadAccounts}>Spróbuj ponownie</button></span></div>}
           <div data-guide="login"><PersonaList accounts={accounts} onPick={login} /></div>
         </div>
       </div>
@@ -250,15 +265,21 @@ export default function Login() {
       {zusOpen && !step && <ZusLoginModal accounts={accounts} onClose={() => setZusOpen(false)} onPick={login} />}
 
       {step && (
-        <div className="modal-bg" role="dialog" aria-modal>
-          <div className="modal" style={{ textAlign: "center" }}>
+        <div className="modal-bg" role="dialog" aria-modal aria-labelledby="step-title">
+          <div className="modal" style={{ textAlign: "center" }} ref={stepBox} tabIndex={-1}>
             <Logo size={52} />
-            <h2 className="mt">{["Potwierdź logowanie w aplikacji mObywatel", "Pobieranie danych z ZUS…", "Gotowe"][step.phase]}</h2>
+            <h2 className="mt" id="step-title">{["Potwierdź logowanie w aplikacji mObywatel", "Pobieranie danych z ZUS…", "Gotowe", "Nie udało się zalogować"][step.phase]}</h2>
             <p className="muted">{step.acc.imie} {step.acc.nazwisko}</p>
-            <div style={{ display: "grid", placeItems: "center", margin: "16px 0" }}>
-              {step.phase < 2 ? <div className="spinner" /> : <span className="badge b-ok"><Icon name="check" size={14} /> Zalogowano</span>}
+            <div style={{ display: "grid", placeItems: "center", margin: "16px 0" }} role="status" aria-live="polite">
+              {step.phase < 2 ? <div className="spinner" aria-label="Trwa logowanie" /> : step.phase === 2 ? <span className="badge b-ok"><Icon name="check" size={14} /> Zalogowano</span> : <span className="badge b-no"><Icon name="x" size={14} /> Błąd</span>}
             </div>
-            <small>{["Oczekiwanie na potwierdzenie w telefonie (symulacja)", "Okresy ubezpieczenia, podstawy wymiaru, e-ZLA, rozliczenia (symulacja)", "Przekierowanie do pulpitu"][step.phase]}</small>
+            <small>{["Oczekiwanie na potwierdzenie w telefonie (symulacja)", "Okresy ubezpieczenia, podstawy wymiaru, e-ZLA, rozliczenia (symulacja)", "Przekierowanie do pulpitu", step.error ?? ""][step.phase]}</small>
+            {step.phase === 3 && (
+              <div className="row mt" style={{ justifyContent: "center" }}>
+                <button className="btn btn-primary" onClick={() => login(step.acc)}>Spróbuj ponownie</button>
+                <button className="btn btn-outline" onClick={() => setStep(null)}>Zamknij</button>
+              </div>
+            )}
           </div>
         </div>
       )}

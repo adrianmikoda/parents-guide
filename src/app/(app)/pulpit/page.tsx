@@ -4,7 +4,7 @@ import Icon from "@/components/Icon";
 import { useApp } from "@/components/AppContext";
 import { Status } from "@/components/ui";
 import { MISSING_LABELS } from "@/lib/quiz";
-import { addDays, diffDays, fmtDate, hasSicknessInsurance, zl } from "@/lib/engine";
+import { addDays, addMonths, diffDays, fmtDate, hasSicknessInsurance, zl } from "@/lib/engine";
 
 const TILES = [
   ["/kalkulator", "calc", "Kalkulator zasiłku", "Okres i wysokość dla obojga rodziców"],
@@ -22,16 +22,23 @@ export default function Pulpit() {
   const me = profile?.person;
   const today = new Date().toISOString().slice(0, 10);
   const due = me?.ciaza?.przewidywanyPorod;
-  const week = me?.ciaza ? Math.floor(diffDays(me.ciaza.poczatek, today) / 7) + 2 : null;
+  // bieżący tydzień ciąży liczony od pierwszego dnia ostatniej miesiączki: 0–6 dni = 1. tydzień
+  const done = me?.ciaza ? Math.floor(diffDays(me.ciaza.poczatek, today) / 7) : null;
+  const week = done != null && done >= 0 && done < 43 ? done + 1 : null;
   const insured = me ? hasSicknessInsurance(me.title) : false;
 
-  const steps = due
+  const steps = due && !insured
+    ? [
+        { d: today, t: "Brak ubezpieczenia chorobowego – zasiłek macierzyński nie przysługuje. Sprawdź dobrowolne ubezpieczenie i świadczenie rodzicielskie", href: "/ryzyka" },
+        { d: due, t: "Przewidywana data porodu – zarejestruj urodzenie w USC", href: "/wnioski" },
+      ]
+    : due
     ? [
         { d: today, t: "Sprawdź dane w ZUS i ryzyka", href: "/zus" },
         { d: addDays(due, -42), t: "Najwcześniejszy start urlopu macierzyńskiego (6 tyg. przed porodem)", href: "/kalkulator" },
         { d: due, t: "Przewidywana data porodu – zarejestruj urodzenie w USC", href: "/wnioski" },
         { d: addDays(due, 21), t: "Ostatni dzień na wniosek o 81,5% / rodzicielski bezpośrednio po macierzyńskim", href: "/wnioski" },
-        { d: addDays(due, 365), t: "Ostatni moment na urlop ojcowski (12 mies.)", href: "/kalkulator" },
+        { d: addMonths(due, 12), t: "Ostatni moment na urlop ojcowski (12 mies.)", href: "/kalkulator" },
       ]
     : [];
 
@@ -90,8 +97,14 @@ export default function Pulpit() {
               {due && <div><div className="lbl">Przewidywany poród</div><div className="val">{fmtDate(due)}</div></div>}
               {week != null && <div><div className="lbl">Tydzień ciąży</div><div className="val">{week}.</div></div>}
               <div><div className="lbl">Tytuł ubezpieczenia</div><div className="val" style={{ fontSize: 14 }}>{profile.person.tytulLabel}</div></div>
-              <div><div className="lbl">Podstawa wymiaru (szac.)</div><div className="val">{zl(profile.base.base)}</div></div>
-              <div><div className="lbl">Zasiłek wypłaca</div><div className="val">{profile.payer ? (profile.payer.wyplacaZasilki === "platnik" ? "Pracodawca / płatnik" : "ZUS") : "ZUS"}</div></div>
+              {insured ? (
+                <>
+                  <div><div className="lbl">Podstawa wymiaru (szac.)</div><div className="val">{zl(profile.base.base)}</div></div>
+                  <div><div className="lbl">Zasiłek wypłaca</div><div className="val">{profile.payer ? (profile.payer.wyplacaZasilki === "platnik" ? "Pracodawca / płatnik" : "ZUS") : "ZUS"}</div></div>
+                </>
+              ) : (
+                <div><div className="lbl">Zasiłek macierzyński</div><div className="val">Nie przysługuje</div></div>
+              )}
             </div>
           </div>
 
