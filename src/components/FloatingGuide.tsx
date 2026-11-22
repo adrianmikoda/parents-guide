@@ -65,7 +65,7 @@ const TUTORIAL: TStep[] = [
 
   go("/wnioski", "Wnioski i dokumenty"),
   { section: "Wnioski i dokumenty", id: "t-wnioski-lista", text: "Wybierz formę ubezpieczenia i świadczenie – zobaczysz, kto wypłaci zasiłek i jakie dokumenty złożyć, z terminami." },
-  { section: "Wnioski i dokumenty", id: "t-wnioski-formularze", text: "Gotowe wnioski: urlop macierzyński, rodzicielski, ojcowski, ZAM, ZAS-53 i odpis aktu urodzenia." },
+  { section: "Wnioski i dokumenty", id: "t-wnioski-formularze", text: "Gotowe dokumenty w trzech grupach: formularze ZUS odwzorowane 1:1 (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12), wnioski do pracodawcy o urlopy według rozporządzenia oraz odpis aktu urodzenia." },
   { section: "Wnioski i dokumenty", id: "t-wnioski-formularz", text: "Wypełniasz tylko potrzebne pola – reszta pochodzi z Twoich danych." },
   { section: "Wnioski i dokumenty", id: "t-wnioski-podglad", text: "Podgląd gotowego dokumentu: wydrukuj go albo wyślij (symulacja z potwierdzeniem UPO)." },
 
