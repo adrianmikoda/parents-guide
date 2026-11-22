@@ -32,6 +32,7 @@ export type Params = {
     maksCzesciRodzicielskiego: number;
     rodzicielskiDoKoncaRokuWiekuDziecka: number;
     macierzynskiObowiazkowoMatkaTygodnie: number;
+    macierzynskiMinMatkaSytuacjaSzczegolna: number; // hospitalizacja / niezdolność do samodzielnej egzystencji matki
     przedPorodemMaxTygodnie: number;
     martweUrodzenieTygodnie: number;
     minDniPoZgonieDziecka: number;
@@ -40,8 +41,10 @@ export type Params = {
     ojcowskiDoMiesiacaZycia: number;
     uzupelniajacyPonizej28TygLub1000g: number;
     uzupelniajacy28do36Tyg: number;
-    uzupelniajacyOd37Tyg: number;
-    uzupelniajacyMinDniHospitalizacjiOd37: number;
+    uzupelniajacyOd37OknoTyg: number; // pobyt liczony od 5. dnia do upływu tego tygodnia po porodzie
+    uzupelniajacyOd37MinKolejnychDni: number;
+    uzupelniajacyOd37PierwszyDzienOd: number;
+    uzupelniajacyOd37PierwszyDzienDo: number;
     adopcjaMaxWiekDziecka: number;
     zastepczaMaxWiekDziecka: number;
     zastepczaMaxWiekOdroczenie: number;
@@ -101,6 +104,7 @@ export const DEFAULT_PARAMS: Params = {
     maksCzesciRodzicielskiego: 5,
     rodzicielskiDoKoncaRokuWiekuDziecka: 6,
     macierzynskiObowiazkowoMatkaTygodnie: 14,
+    macierzynskiMinMatkaSytuacjaSzczegolna: 8,
     przedPorodemMaxTygodnie: 6,
     martweUrodzenieTygodnie: 8,
     minDniPoZgonieDziecka: 7,
@@ -109,8 +113,10 @@ export const DEFAULT_PARAMS: Params = {
     ojcowskiDoMiesiacaZycia: 12,
     uzupelniajacyPonizej28TygLub1000g: 15,
     uzupelniajacy28do36Tyg: 8,
-    uzupelniajacyOd37Tyg: 3,
-    uzupelniajacyMinDniHospitalizacjiOd37: 14,
+    uzupelniajacyOd37OknoTyg: 8,
+    uzupelniajacyOd37MinKolejnychDni: 2,
+    uzupelniajacyOd37PierwszyDzienOd: 5,
+    uzupelniajacyOd37PierwszyDzienDo: 28,
     adopcjaMaxWiekDziecka: 14,
     zastepczaMaxWiekDziecka: 7,
     zastepczaMaxWiekOdroczenie: 10,
@@ -165,16 +171,19 @@ export const PARAM_LABELS: Record<string, string> = {
   "wymiary.maksCzesciRodzicielskiego": "Maksymalna liczba części urlopu rodzicielskiego",
   "wymiary.rodzicielskiDoKoncaRokuWiekuDziecka": "Rodzicielski do końca roku, w którym dziecko kończy (lat)",
   "wymiary.macierzynskiObowiazkowoMatkaTygodnie": "Część macierzyńskiego wykorzystywana obowiązkowo przez matkę (tyg.)",
+  "wymiary.macierzynskiMinMatkaSytuacjaSzczegolna": "Przejęcie macierzyńskiego w sytuacji szczególnej (szpital, niezdolność matki) – min. tygodni matki",
   "wymiary.przedPorodemMaxTygodnie": "Maks. część macierzyńskiego przed porodem (tyg.)",
   "wymiary.martweUrodzenieTygodnie": "Urlop po martwym urodzeniu / zgonie do 8 tyg. życia (tyg.)",
   "wymiary.minDniPoZgonieDziecka": "Min. okres po zgonie dziecka (dni)",
   "wymiary.ojcowskiDni": "Urlop ojcowski (dni)",
   "wymiary.ojcowskiMinCzesciDni": "Minimalna część urlopu ojcowskiego (dni)",
   "wymiary.ojcowskiDoMiesiacaZycia": "Urlop ojcowski do ukończenia przez dziecko (mies.)",
-  "wymiary.uzupelniajacyPonizej28TygLub1000g": "Uzupełniający – poród przed 28 tyg. lub ≤1000 g (maks. tyg.)",
-  "wymiary.uzupelniajacy28do36Tyg": "Uzupełniający – poród 28–36 tyg. (maks. tyg.)",
-  "wymiary.uzupelniajacyOd37Tyg": "Uzupełniający – poród od 37 tyg. z hospitalizacją (maks. tyg.)",
-  "wymiary.uzupelniajacyMinDniHospitalizacjiOd37": "Uzupełniający od 37 tyg. – min. dni hospitalizacji",
+  "wymiary.uzupelniajacyPonizej28TygLub1000g": "Uzupełniający – poród przed 28 tyg. lub ≤1000 g: pobyt w szpitalu liczony do upływu (tyg. po porodzie)",
+  "wymiary.uzupelniajacy28do36Tyg": "Uzupełniający – poród 28–36 tyg. i >1000 g: pobyt liczony do upływu (tyg. po porodzie)",
+  "wymiary.uzupelniajacyOd37OknoTyg": "Uzupełniający – poród od 37 tyg.: pobyt liczony od 5. dnia do upływu (tyg. po porodzie)",
+  "wymiary.uzupelniajacyOd37MinKolejnychDni": "Uzupełniający od 37 tyg. – min. kolejnych dni pobytu w szpitalu",
+  "wymiary.uzupelniajacyOd37PierwszyDzienOd": "Uzupełniający od 37 tyg. – pierwszy dzień pobytu najwcześniej (dzień po porodzie)",
+  "wymiary.uzupelniajacyOd37PierwszyDzienDo": "Uzupełniający od 37 tyg. – pierwszy dzień pobytu najpóźniej (dzień po porodzie)",
   "wymiary.adopcjaMaxWiekDziecka": "Przysposobienie – maks. wiek dziecka (lat)",
   "wymiary.zastepczaMaxWiekDziecka": "Rodzina zastępcza – maks. wiek dziecka (lat)",
   "wymiary.zastepczaMaxWiekOdroczenie": "Rodzina zastępcza – maks. wiek przy odroczeniu obowiązku szkolnego",

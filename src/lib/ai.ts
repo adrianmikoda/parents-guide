@@ -39,12 +39,12 @@ Aktualne parametry narzędzia (obowiązujące – mogą różnić się od Twojej
 - urlop rodzicielski: ${p.wymiary.rodzicielskiJedno} tyg. (ciąża mnoga ${p.wymiary.rodzicielskiWiele}; „Za życiem” ${p.wymiary.rodzicielskiZaZyciemJedno}/${p.wymiary.rodzicielskiZaZyciemWiele}), ${p.stawki.rodzicielski}%, po ${p.wymiary.nieprzenoszalnaCzescTygodnie} tyg. nieprzenoszalne dla każdego rodzica, do ${p.wymiary.maksCzesciRodzicielskiego} części, do końca roku kalendarzowego, w którym dziecko kończy ${p.wymiary.rodzicielskiDoKoncaRokuWiekuDziecka} lat; min. ${p.kwoty.swiadczenieRodzicielskie}\u00a0zł/mies.
 - stawka jednolita ${p.stawki.jednolity}% przy wniosku do ${p.terminy.jednolityWniosekDni} dni po porodzie.
 - urlop ojcowski: ${p.wymiary.ojcowskiDni} dni, ${p.stawki.ojcowski}%, do ${p.wymiary.ojcowskiDoMiesiacaZycia} mies. życia dziecka, w 1 lub 2 częściach.
-- uzupełniający urlop macierzyński (wcześniak/hospitalizacja): maks. ${p.wymiary.uzupelniajacyPonizej28TygLub1000g} / ${p.wymiary.uzupelniajacy28do36Tyg} / ${p.wymiary.uzupelniajacyOd37Tyg} tyg., ${p.stawki.uzupelniajacy}%.
+- uzupełniający urlop macierzyński (wcześniak/hospitalizacja): maks. ${p.wymiary.uzupelniajacyPonizej28TygLub1000g} / ${p.wymiary.uzupelniajacy28do36Tyg} / ${p.wymiary.uzupelniajacyOd37OknoTyg} tyg. (tydzień urlopu za każdy tydzień pobytu dziecka w szpitalu), ${p.stawki.uzupelniajacy}%.
 - martwe urodzenie / zgon dziecka do 8 tyg.: ${p.wymiary.martweUrodzenieTygodnie} tyg., nie krócej niż ${p.wymiary.minDniPoZgonieDziecka} dni od zgonu.
 - zasiłek chorobowy w ciąży (kod B): ${p.stawki.chorobowyCiaza}%, okres zasiłkowy ${p.chorobowy.okresZasilkowyCiaza} dni; okres wyczekiwania ${p.chorobowy.okresWyczekiwaniaObowiazkowe} dni (obowiązkowe) / ${p.chorobowy.okresWyczekiwaniaDobrowolne} dni (dobrowolne); pracodawca płaci pierwsze ${p.chorobowy.wynagrodzenieChorobowe} dni (${p.chorobowy.wynagrodzenieChorobowe50plus} po 50. r.ż.).
 - podstawa wymiaru: średni przychód z 12 mies. pomniejszony o ${p.kwoty.skladkiPracownikaProcent}%; zasiłki wypłaca płatnik zgłaszający > ${p.kwoty.progPlatnikaUbezpieczonych} ubezpieczonych, w pozostałych przypadkach ZUS.
 - zasiłek macierzyński nie wymaga okresu wyczekiwania – wystarczy ubezpieczenie chorobowe w dniu porodu.
-- formularze ZUR i ZAO połączono z ZAM od 24.10.2026, Z-3b zlikwidowano.`;
+- wniosek ZAM obejmuje wszystkie okresy (macierzyński, na warunkach, rodzicielski, uzupełniający, ojcowski); formularze ZUR i ZAO nie istnieją; Z-3b zlikwidowano.`;
 }
 
 export async function askAssistant(p: Params, messages: { role: "user" | "assistant"; content: string }[], context?: string) {

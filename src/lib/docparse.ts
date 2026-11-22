@@ -30,8 +30,6 @@ const TYPES: [RegExp, string, string][] = [
   [/ZAS-?12\b/i, "ZAS-12", "Zaświadczenie płatnika na dalszy okres"],
   [/ZAS-?53\b/i, "ZAS-53", "Wniosek o zasiłek chorobowy"],
   [/\bZ-?3\b|ZAŚWIADCZENIE PŁATNIKA SKŁADEK/i, "Z-3", "Zaświadczenie płatnika składek (pracownik)"],
-  [/\bZUR\b/i, "ZUR", "Wniosek o zasiłek za okres urlopu rodzicielskiego (połączony z ZAM)"],
-  [/\bZAO\b/i, "ZAO", "Wniosek o zasiłek za okres urlopu ojcowskiego (połączony z ZAM)"],
   [/\bZAM\b|WNIOSEK O ZASIŁEK MACIERZYŃSKI/i, "ZAM", "Wniosek o zasiłek macierzyński"],
   [/poświadczeni\w* ubezpieczenia/i, "POSW", "Poświadczenie ubezpieczenia chorobowego"],
   [/e-?ZLA|ZUS ZLA|zaświadczenie lekarskie/i, "ZLA", "Zaświadczenie lekarskie e-ZLA"],

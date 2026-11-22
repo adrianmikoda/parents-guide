@@ -5,15 +5,23 @@ import Icon from "@/components/Icon";
 import { useApp } from "@/components/AppContext";
 import { addDays, addMonths, documentsFor, fmtDate, isEmployee, isSelfEmployed, isValidDate, Title, TITLE_LABELS, weeksByChildren } from "@/lib/engine";
 import type { Params } from "@/lib/params";
+import type { Persona } from "@/lib/mock";
 import { loadApps, sendApp, SentApp } from "@/lib/apps-client";
+import { OfficialInputs, OfficialPaper } from "@/components/OfficialForm";
+import { OfficialForm, summary, validateZAM, validateZAS53, ZAM, ZAS53 } from "@/lib/zusforms";
+import { summaryPayer, validateZ3, validateZ3a, validateZAS12, Z3, Z3A, ZAS12 } from "@/lib/zusforms-platnik";
+import { EMPLOYER_SPECS, type F } from "@/lib/wnioski-pracodawca";
 
-type F = { name: string; label: string; type?: "text" | "date" | "number" | "select" | "textarea"; options?: string[]; hint?: string };
-type Ctx = { due: string; params: Params; children: number };
+type Ctx = { due: string; params: Params; children: number; title: Title; birth?: string };
 type Spec = {
   key: string; title: string; to: string; desc: string; fields: F[];
   body: (d: Record<string, string>, c: Ctx) => string;
   validate: (d: Record<string, string>, c: Ctx) => Record<string, string>;
   zusForm?: string;
+  /** paragraf rozporządzenia (Dz.U. 2025 poz. 322) – wnioski do pracodawcy */
+  par?: string;
+  /** formularz ZUS odwzorowany 1:1 – zamiast pól i pisma */
+  official?: OfficialForm;
 };
 
 const ZUS_FORMS = "https://www.zus.pl/wzory-formularzy/zasilki";
@@ -43,152 +51,36 @@ function account(d: Record<string, string>, e: Record<string, string>) {
 }
 
 const SPECS: Spec[] = [
+  ...EMPLOYER_SPECS,
   {
-    key: "urlop_macierzynski", title: "Wniosek o urlop macierzyński (i rodzicielski)", to: "Pracodawca", desc: "Jeden wniosek może obejmować urlop macierzyński i bezpośrednio po nim rodzicielski.",
-    fields: [
-      { name: "start", label: "Początek urlopu macierzyńskiego", type: "date", hint: "najwcześniej 6 tygodni przed przewidywaną datą porodu, najpóźniej w dniu porodu" },
-      { name: "dzieci", label: "Liczba dzieci urodzonych przy jednym porodzie", type: "number" },
-      { name: "rodzicielski", label: "Urlop rodzicielski bezpośrednio po macierzyńskim", type: "select", options: ["Nie", "Tak – w pełnym wymiarze", "Tak – w części"] },
-      { name: "tygodnie", label: "Wymiar urlopu rodzicielskiego (tyg.)", type: "number", hint: "tylko przy wyborze „w części”" },
-      { name: "stawka", label: "Stawka zasiłku", type: "select", options: ["100% / 70%", "81,5% za cały okres (wniosek do 21 dni po porodzie)"] },
-    ],
-    body: (d, c) => {
-      const n = int(d.dzieci);
-      const weeks = d.rodzicielski === "Tak – w pełnym wymiarze" ? String(poolFor({ ...c, children: n || 1 })) : v(d.tygodnie);
-      return `Proszę o udzielenie urlopu macierzyńskiego od dnia ${date(d.start)} w wymiarze przysługującym przy urodzeniu ${Number.isFinite(n) && n > 0 ? n : "—"} ${n === 1 ? "dziecka" : "dzieci"} przy jednym porodzie.${d.rodzicielski?.startsWith("Tak") ? `\nJednocześnie wnoszę o udzielenie, bezpośrednio po urlopie macierzyńskim, urlopu rodzicielskiego w wymiarze ${weeks} tygodni.` : ""}\nWnioskowana stawka zasiłku macierzyńskiego: ${v(d.stawka)}.\nZałączniki: skrócony odpis aktu urodzenia dziecka (lub zaświadczenie lekarskie o przewidywanej dacie porodu).`;
-    },
-    validate: (d, c) => {
-      const e: Record<string, string> = {};
-      needDate(d, e, "start");
-      need(d, e, ["rodzicielski", "stawka"]);
-      const W = c.params.wymiary;
-      if (isValidDate(d.start) && isValidDate(c.due)) {
-        if (d.start < addDays(c.due, -W.przedPorodemMaxTygodnie * 7)) e.start = `Urlop może zacząć się najwcześniej ${W.przedPorodemMaxTygodnie} tyg. przed porodem (${fmtDate(addDays(c.due, -W.przedPorodemMaxTygodnie * 7))}).`;
-        else if (d.start > c.due) e.start = `Urlop macierzyński zaczyna się najpóźniej w dniu porodu (${fmtDate(c.due)}).`;
-      }
-      const n = int(d.dzieci);
-      if (!(n >= 1 && n <= 6)) e.dzieci = "Podaj liczbę dzieci od 1 do 6.";
-      if (d.rodzicielski === "Tak – w części") {
-        const t = int(d.tygodnie);
-        const max = poolFor({ ...c, children: n || 1 }) - W.nieprzenoszalnaCzescTygodnie;
-        if (!(t >= 1 && t <= max)) e.tygodnie = `Podaj liczbę tygodni od 1 do ${max}.`;
-      }
-      if (d.stawka?.startsWith("81,5")) {
-        if (!d.rodzicielski?.startsWith("Tak")) e.stawka = "Stawka 81,5% wymaga jednoczesnego wniosku o urlop rodzicielski.";
-        else if (isValidDate(c.due) && today() > addDays(c.due, c.params.terminy.jednolityWniosekDni))
-          e.stawka = `Termin na wniosek o 81,5% minął (${c.params.terminy.jednolityWniosekDni} dni po porodzie: ${fmtDate(addDays(c.due, c.params.terminy.jednolityWniosekDni))}). Wybierz 100% / 70%.`;
-      }
-      return e;
-    },
+    key: "ZAM", title: "ZAM – Wniosek o zasiłek macierzyński", to: "ZUS (PUE/eZUS)", zusForm: ZUS_FORMS, official: ZAM, fields: [],
+    desc: "Wzór ZUS. Jeden wniosek obejmuje wszystkie okresy: urlop macierzyński (albo na warunkach urlopu macierzyńskiego), rodzicielski, uzupełniający i ojcowski. Składasz go temu, kto wypłaca zasiłek – płatnikowi składek albo ZUS.",
+    body: (d) => summary(ZAM, d),
+    validate: (d, c) => validateZAM(d, { params: c.params, children: c.children, birth: c.birth, selfEmployed: isSelfEmployed(c.title), today: today() }),
   },
   {
-    key: "urlop_na_warunkach", title: "Wniosek o urlop na warunkach urlopu macierzyńskiego", to: "Pracodawca", desc: "Przy przysposobieniu dziecka lub w rodzinie zastępczej niezawodowej.",
-    fields: [
-      { name: "od", label: "Początek urlopu (dzień przyjęcia dziecka lub później)", type: "date" },
-      { name: "dzieci", label: "Liczba przyjętych dzieci", type: "number" },
-      { name: "podstawa", label: "Podstawa", type: "select", options: ["przysposobienie (wniosek do sądu złożony)", "rodzina zastępcza niezawodowa"] },
-    ],
-    body: (d) => `Proszę o udzielenie urlopu na warunkach urlopu macierzyńskiego od dnia ${date(d.od)} w związku z przyjęciem na wychowanie ${v(d.dzieci)} ${d.dzieci === "1" ? "dziecka" : "dzieci"} (${v(d.podstawa)}).\nZałącznik: zaświadczenie sądu o wszczęciu postępowania o przysposobienie / postanowienie o umieszczeniu w rodzinie zastępczej.`,
-    validate: (d) => {
-      const e: Record<string, string> = {};
-      needDate(d, e, "od");
-      need(d, e, ["podstawa"]);
-      const n = int(d.dzieci);
-      if (!(n >= 1 && n <= 6)) e.dzieci = "Podaj liczbę dzieci od 1 do 6.";
-      return e;
-    },
+    key: "ZAS-53", title: "ZAS-53 – Wniosek o zasiłek chorobowy", to: "ZUS (PUE/eZUS)", zusForm: ZUS_FORMS, official: ZAS53, fields: [],
+    desc: "Wzór ZUS. Dla prowadzących działalność i osób z nimi współpracujących, duchownych, marynarzy oraz osób niezdolnych do pracy z powodu choroby po ustaniu zatrudnienia/ubezpieczenia.",
+    body: (d) => summary(ZAS53, d),
+    validate: (d, c) => validateZAS53(d, { params: c.params, today: today() }),
   },
   {
-    key: "urlop_rodzicielski", title: "Wniosek o urlop rodzicielski (lub jego część)", to: "Pracodawca", desc: "Składany 21 dni przed rozpoczęciem; do 5 części.",
-    fields: [
-      { name: "od", label: "Od", type: "date", hint: "zwykle dzień po zakończeniu urlopu macierzyńskiego" }, { name: "do", label: "Do", type: "date" },
-      { name: "czesc", label: "Która część", type: "select", options: ["1", "2", "3", "4", "5"] },
-      { name: "drugi", label: "Drugi rodzic korzysta z urlopu", type: "select", options: ["Nie", "Tak – jednocześnie", "Tak – w innym terminie"] },
-    ],
-    body: (d) => `Proszę o udzielenie urlopu rodzicielskiego (część ${v(d.czesc)}) w okresie od ${date(d.od)} do ${date(d.do)}.\nOświadczenie o korzystaniu z urlopu przez drugiego rodzica: ${v(d.drugi)}.`,
-    validate: (d, c) => {
-      const e: Record<string, string> = {};
-      needDate(d, e, "od"); needDate(d, e, "do"); order(d, e, "od", "do");
-      need(d, e, ["czesc", "drugi"]);
-      if (isValidDate(d.od) && isValidDate(c.due) && d.od < c.due) e.od = "Urlop rodzicielski zaczyna się po urodzeniu dziecka.";
-      if (isValidDate(d.od) && isValidDate(d.do) && !e.do) {
-        const weeks = (new Date(d.do).getTime() - new Date(d.od).getTime()) / 86400000 / 7 + 1 / 7;
-        if (weeks > poolFor(c)) e.do = `Urlop rodzicielski trwa maks. ${poolFor(c)} tyg.`;
-      }
-      return e;
-    },
+    key: "Z-3", title: "Z-3 – Zaświadczenie płatnika składek (pracownik)", to: "ZUS (PUE/eZUS)", zusForm: ZUS_FORMS, official: Z3, fields: [],
+    desc: "Wzór ZUS. Wypełnia pracodawca, gdy zasiłek ustala i wypłaca ZUS (płatnik zgłasza do ubezpieczenia chorobowego nie więcej niż 20 osób). Możesz przygotować dane i przekazać je pracodawcy.",
+    body: (d) => summaryPayer("Z-3", d),
+    validate: (d) => validateZ3(d, { today: today() }),
   },
   {
-    key: "urlop_ojcowski", title: "Wniosek o urlop ojcowski", to: "Pracodawca", desc: "14 dni, w całości lub w 2 częściach po 7 dni; wniosek 7 dni przed.",
-    fields: [
-      { name: "dziecko", label: "Data urodzenia dziecka", type: "date" },
-      { name: "od", label: "Od", type: "date" },
-      { name: "dni", label: "Liczba dni", type: "select", options: ["14", "7"] },
-    ],
-    body: (d) => `Proszę o udzielenie urlopu ojcowskiego w wymiarze ${v(d.dni)} dni od dnia ${date(d.od)}, w związku z urodzeniem dziecka w dniu ${date(d.dziecko)}.\nZałącznik: skrócony odpis aktu urodzenia dziecka.`,
-    validate: (d, c) => {
-      const e: Record<string, string> = {};
-      needDate(d, e, "dziecko"); needDate(d, e, "od"); need(d, e, ["dni"]);
-      if (d.dni && !["7", "14"].includes(d.dni)) e.dni = "Urlop ojcowski trwa 14 dni albo 7 dni (jedna z dwóch części).";
-      if (isValidDate(d.dziecko) && isValidDate(d.od) && !e.od) {
-        const limit = addMonths(d.dziecko, c.params.wymiary.ojcowskiDoMiesiacaZycia);
-        if (d.od < d.dziecko) e.od = "Urlop ojcowski zaczyna się najwcześniej w dniu urodzenia dziecka.";
-        else if (addDays(d.od, (Number(d.dni) || 14) - 1) > limit) e.od = `Urlop trzeba wykorzystać do ukończenia przez dziecko ${c.params.wymiary.ojcowskiDoMiesiacaZycia} miesięcy (${fmtDate(limit)}).`;
-      }
-      return e;
-    },
+    key: "Z-3a", title: "Z-3a – Zaświadczenie płatnika składek (zlecenie i inne tytuły)", to: "ZUS (PUE/eZUS)", zusForm: ZUS_FORMS, official: Z3A, fields: [],
+    desc: "Wzór ZUS. Wypełnia płatnik składek (np. zleceniodawca) dla osoby niebędącej pracownikiem – z wyłączeniem prowadzących działalność, osób współpracujących, duchownych i marynarzy.",
+    body: (d) => summaryPayer("Z-3a", d),
+    validate: (d) => validateZ3a(d, { today: today() }),
   },
   {
-    key: "urlop_uzupelniajacy", title: "Wniosek o uzupełniający urlop macierzyński", to: "Pracodawca", desc: "Wcześniak lub hospitalizacja noworodka – bezpośrednio po macierzyńskim.",
-    fields: [{ name: "tydzien", label: "Tydzień ciąży przy porodzie", type: "number" }, { name: "masa", label: "Masa urodzeniowa (g)", type: "number" }, { name: "szpital", label: "Okres hospitalizacji (od–do)", type: "text" }],
-    body: (d) => `Proszę o udzielenie uzupełniającego urlopu macierzyńskiego bezpośrednio po urlopie macierzyńskim.\nDziecko urodziło się w ${v(d.tydzien)}. tygodniu ciąży, masa urodzeniowa ${v(d.masa)} g, hospitalizacja: ${v(d.szpital)}.\nZałącznik: zaświadczenie wydane przez szpital.`,
-    validate: (d) => {
-      const e: Record<string, string> = {};
-      const t = int(d.tydzien);
-      if (!(t >= 20 && t <= 42)) e.tydzien = "Podaj tydzień ciąży od 20 do 42.";
-      const m = int(d.masa);
-      if (!(m >= 200 && m <= 7000)) e.masa = "Podaj masę urodzeniową w gramach (200–7000).";
-      need(d, e, ["szpital"]);
-      return e;
-    },
-  },
-  {
-    key: "praca_rodzicielski", title: "Wniosek o łączenie urlopu rodzicielskiego z pracą", to: "Pracodawca", desc: "Praca do ½ etatu – urlop wydłuża się proporcjonalnie.",
-    fields: [{ name: "od", label: "Od", type: "date" }, { name: "wymiar", label: "Wymiar pracy", type: "select", options: ["1/4 etatu", "1/3 etatu", "1/2 etatu"] }],
-    body: (d) => `Proszę o umożliwienie mi wykonywania pracy w wymiarze ${v(d.wymiar)} w trakcie urlopu rodzicielskiego od dnia ${date(d.od)}. Wniosek składam nie później niż 21 dni przed rozpoczęciem pracy.`,
-    validate: (d) => {
-      const e: Record<string, string> = {};
-      needDate(d, e, "od"); need(d, e, ["wymiar"]);
-      if (isValidDate(d.od) && d.od < addDays(today(), 21)) e.od = `Wniosek składa się co najmniej 21 dni wcześniej – najwcześniejszy możliwy początek to ${fmtDate(addDays(today(), 21))}.`;
-      return e;
-    },
-  },
-  {
-    key: "ZAM", title: "ZAM – wniosek o zasiłek macierzyński (symulacja)", to: "ZUS (PUE/eZUS)", desc: "Dla osób niebędących pracownikami (zlecenie, działalność). Od 24.10.2026 obejmuje też dawne ZUR i ZAO.", zusForm: ZUS_FORMS,
-    fields: [
-      { name: "okres", label: "Zasiłek za okres", type: "select", options: ["urlopu macierzyńskiego", "urlopu macierzyńskiego i rodzicielskiego", "urlopu rodzicielskiego", "urlopu ojcowskiego", "urlopu na warunkach urlopu macierzyńskiego"] },
-      { name: "od", label: "Od", type: "date" }, { name: "do", label: "Do", type: "date" },
-      { name: "rachunek", label: "Numer rachunku bankowego", type: "text" },
-      { name: "stawka", label: "Stawka", type: "select", options: ["100% / 70%", "81,5%"] },
-    ],
-    body: (d) => `Wnoszę o wypłatę zasiłku macierzyńskiego za okres ${v(d.okres)}: ${date(d.od)} – ${date(d.do)}.\nStawka: ${v(d.stawka)}. Rachunek: ${v(d.rachunek)}.`,
-    validate: (d, c) => {
-      const e: Record<string, string> = {};
-      need(d, e, ["okres", "stawka"]); needDate(d, e, "od"); needDate(d, e, "do"); order(d, e, "od", "do"); account(d, e);
-      if (d.stawka === "81,5%" && isValidDate(c.due) && today() > addDays(c.due, c.params.terminy.jednolityWniosekDni))
-        e.stawka = `Termin na wniosek o 81,5% minął (${fmtDate(addDays(c.due, c.params.terminy.jednolityWniosekDni))}).`;
-      return e;
-    },
-  },
-  {
-    key: "ZAS-53", title: "ZAS-53 – wniosek o zasiłek chorobowy (symulacja)", to: "ZUS (PUE/eZUS)", desc: "Dla przedsiębiorców; Z-3b zlikwidowany.", zusForm: ZUS_FORMS,
-    fields: [{ name: "zla", label: "Seria i numer e-ZLA", type: "text" }, { name: "rachunek", label: "Numer rachunku bankowego", type: "text" }, { name: "praca", label: "Czy w okresie zwolnienia wykonujesz pracę zarobkową?", type: "select", options: ["Nie", "Tak"] }],
-    body: (d) => `Wnoszę o wypłatę zasiłku chorobowego na podstawie zaświadczenia lekarskiego ${v(d.zla)}.\nOświadczam, że w okresie niezdolności do pracy ${d.praca === "Tak" ? "WYKONUJĘ" : d.praca === "Nie" ? "nie wykonuję" : "—"} pracy zarobkowej. Rachunek: ${v(d.rachunek)}.`,
-    validate: (d) => {
-      const e: Record<string, string> = {};
-      need(d, e, ["zla", "praca"]); account(d, e);
-      return e;
-    },
+    key: "ZAS-12", title: "ZAS-12 – Zaświadczenie płatnika składek (dalszy okres)", to: "ZUS (PUE/eZUS)", zusForm: ZUS_FORMS, official: ZAS12, fields: [],
+    desc: "Wzór ZUS. Wypełnia płatnik składek, gdy ZUS ma ustalić prawo do zasiłku chorobowego lub opiekuńczego za dalszy okres nieprzerwanej niezdolności do pracy.",
+    body: (d) => summaryPayer("ZAS-12", d),
+    validate: (d) => validateZAS12(d, { today: today() }),
   },
   {
     key: "odpis_aktu", title: "Odpis aktu urodzenia (rejestr stanu cywilnego – symulacja)", to: "Urząd Stanu Cywilnego", desc: "Odpis skrócony lub zupełny – potrzebny pracodawcy/ZUS.",
@@ -204,12 +96,73 @@ const SPECS: Spec[] = [
   },
 ];
 
+const SHORT: Record<string, string> = {
+  urlop_macierzynski: "Macierzyński przed porodem", rezygnacja_macierzynski: "Rezygnacja z macierzyńskiego", pozostala_czesc: "Pozostała część macierzyńskiego",
+  czesc_sytuacja: "Macierzyński – sytuacja szczególna", urlop_uzupelniajacy: "Uzupełniający macierzyński", urlop_rodzicielski: "Rodzicielski",
+  praca_rodzicielski: "Rodzicielski + praca", urlop_ojcowski: "Ojcowski", urlop_na_warunkach: "Na warunkach macierzyńskiego",
+  urlop_wychowawczy: "Wychowawczy", obnizenie_wymiaru: "Obniżenie wymiaru (zamiast wychowawczego)", odpis_aktu: "Odpis aktu urodzenia",
+};
+const tabLabel = (s: Spec) => SHORT[s.key] ?? s.title.split(" – ")[0];
+
 const BENEFIT_SPEC = (benefit: string, title: Title): string | null => {
   const emp = isEmployee(title);
   if (benefit === "chorobowy") return isSelfEmployed(title) ? "ZAS-53" : null;
   if (!emp) return "ZAM";
   return { macierzynski: "urlop_macierzynski", rodzicielski: "urlop_rodzicielski", ojcowski: "urlop_ojcowski", uzupelniajacy: "urlop_uzupelniajacy", adopcja: "urlop_na_warunkach" }[benefit] ?? null;
 };
+
+/** Dane do formularzy ZUS, które wynikają z profilu (bez zgadywania adresu czy miejsca urodzenia). */
+function officialDefaults(key: string, me: Persona | undefined, title: Title, due: string, children: number, params: Params): Record<string, string> {
+  const d: Record<string, string> = { dataWniosku: today() };
+  if (me) {
+    Object.assign(d, { pesel: /^\d{11}$/.test(me.pesel ?? "") ? me.pesel : "", imie: me.imie, nazwisko: me.nazwisko });
+    if (isSelfEmployed(title)) d.pNazwa = `${me.imie} ${me.nazwisko}`;
+    else if (me.platnik) Object.assign(d, { pNip: me.platnik.nip ?? "", pNazwa: me.platnik.nazwa });
+  }
+  const z = [...(me?.ezla ?? [])].sort((a, b) => (a.od < b.od ? 1 : -1))[0];
+  if (key === "ZAS-53") {
+    d.wOkresie = "X";
+    if (z) Object.assign(d, { okres_od: z.od, okres_do: z.do, zla: z.seria });
+    return d;
+  }
+  if (key === "Z-3" || key === "Z-3a" || key === "ZAS-12") {
+    // dane płatnika i ubezpieczonego z profilu; okres – z ostatniego e-ZLA albo z planowanego urlopu macierzyńskiego
+    if (me?.platnik) d[me.platnik.liczbaUbezpieczonych > params.kwoty.progPlatnikaUbezpieczonych ? "pow20" : "do20"] = "X";
+    if (key !== "ZAS-12") d.pierwszorazowy = "X";
+    if (key === "ZAS-12") d.trwa = "TAK";
+    if (z) Object.assign(d, { zChor: "X", ok_zChor_od: z.od, ok_zChor_do: z.do, zla_zChor: z.seria });
+    else if (key !== "ZAS-12" && isValidDate(due)) {
+      const end = addDays(due, weeksByChildren(params.wymiary.macierzynski, children) * 7 - 1);
+      Object.assign(d, { zMac: "X", ok_zMac_od: due, ok_zMac_do: end, ...(key === "Z-3" ? { u6mac: "X" } : {}) });
+    }
+    const months = [...(me?.przychody ?? [])].sort((a, b) => (a.miesiac < b.miesiac ? 1 : -1)).slice(0, 12).reverse();
+    const kw = (n: number) => n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+    if (key === "Z-3" && me) {
+      const etat = me.etat ?? 1;
+      Object.assign(d, { zatr_od: me.ubezpieczenieOd, wymiar: ({ 1: "1/1", 0.75: "3/4", 0.5: "1/2", 0.25: "1/4" } as Record<number, string>)[etat] ?? String(etat), wymiarOd: me.ubezpieczenieOd });
+      months.forEach((m, i) => Object.assign(d, { [`tMies_${i}_0`]: m.miesiac.slice(0, 4), [`tMies_${i}_1`]: String(Number(m.miesiac.slice(5, 7))), [`tMies_${i}_5`]: kw(m.kwota), [`tMies_${i}_8`]: "13,71" }));
+    }
+    if (key === "Z-3a" && me) {
+      Object.assign(d, { ubChor: "TAK", tytul2: title.startsWith("zlecenie") ? "X" : "", podlChor_od: me.ubezpieczenieOd, ustal: "NIE" });
+      months.forEach((m, i) => Object.assign(d, { [`tPrzych_${i}_0`]: m.miesiac.slice(0, 4), [`tPrzych_${i}_1`]: String(Number(m.miesiac.slice(5, 7))), [`tPrzych_${i}_4`]: kw(m.kwota) }));
+    }
+    return d;
+  }
+  if (title === "jdg_chorobowe") d.ubezpDobrowolne = "TAK";
+  if (title === "jdg_bez") d.ubezpDobrowolne = "NIE";
+  const W = params.wymiary;
+  const born = me?.dzieci?.[0];
+  if (me?.przyjecie) {
+    const end = addDays(me.przyjecie.data, weeksByChildren(W.naWarunkachMacierzynskiego, children) * 7 - 1);
+    Object.assign(d, { [me.przyjecie.rodzaj === "zastepcza" ? "p1zast" : "p1adop"]: "X", p1data: me.przyjecie.data, zWar: "X", okMac_od: me.przyjecie.data, okMac_do: end, koniecMac: end });
+  } else if (isValidDate(due)) {
+    const end = addDays(due, weeksByChildren(W.macierzynski, children) * 7 - 1);
+    Object.assign(d, { zMac: "X", okMac_od: due, okMac_do: end, koniecMac: end });
+    if (born) Object.assign(d, { p1: "X", dziecko1: `${born.imie} ${me?.nazwisko ?? ""}, ur. ${fmtDate(born.dataUrodzenia)}, ` });
+    else Object.assign(d, { p2: "X", p2data: due });
+  }
+  return d;
+}
 
 const DRAFT_KEY = "pp_wnioski_draft";
 function loadDrafts(): Record<string, Record<string, string>> {
@@ -226,6 +179,8 @@ function Field({ f, value, error, onChange }: { f: F; value: string; error?: str
         <select id={id} className="input" value={value} aria-invalid={!!error} aria-describedby={desc} onChange={(e) => onChange(e.target.value)}>
           <option value="">— wybierz —</option>{f.options!.map((o) => <option key={o}>{o}</option>)}
         </select>
+      ) : f.type === "textarea" ? (
+        <textarea id={id} className="input" rows={3} value={value} aria-invalid={!!error} aria-describedby={desc} onChange={(e) => onChange(e.target.value)} />
       ) : (
         <input id={id} className="input" type={f.type || "text"} inputMode={f.type === "number" ? "numeric" : undefined} value={value} aria-invalid={!!error} aria-describedby={desc} onChange={(e) => onChange(e.target.value)} />
       )}
@@ -257,7 +212,7 @@ function Wnioski() {
   const due: string = (isValidDate(qDate) ? qDate : "") || me?.ciaza?.przewidywanyPorod || me?.przyjecie?.data || me?.dzieci?.[0]?.dataUrodzenia || "";
   const qChildren = Number(sp.get("children"));
   const children = qChildren >= 1 && qChildren <= 6 ? Math.round(qChildren) : 1;
-  const ctx: Ctx = { due, params, children };
+  const ctx: Ctx = { due, params, children, title, birth: me?.dzieci?.[0]?.dataUrodzenia || due || undefined };
 
   useEffect(() => {
     if (me) { setTitle(me.title); setInsured(me.platnik?.liczbaUbezpieczonych ?? 0); if (me.przyjecie) setBenefit("adopcja"); }
@@ -274,14 +229,21 @@ function Wnioski() {
     const born = me?.dzieci?.[0]?.dataUrodzenia || "";
     const macEnd = isValidDate(due) ? addDays(due, weeksByChildren(W.macierzynski, children) * 7) : "";
     const qWeeks = sp.get("weeks");
+    const child = me?.dzieci?.[0];
+    const emp = SPECS.find((x) => x.key === specKey)?.to === "Pracodawca";
+    // urlop rodzicielski z kalkulatora: bezpośrednio po macierzyńskim, liczba tygodni z planu (przy 81,5% – pełny wymiar)
+    const rodzWeeks = Number(qWeeks) > 0 ? Number(qWeeks) : (children > 1 ? W.rodzicielskiWiele : W.rodzicielskiJedno) - W.nieprzenoszalnaCzescTygodnie;
     return {
-      start: due, dzieci: String(children), od: specKey === "urlop_rodzicielski" ? macEnd : specKey === "urlop_na_warunkach" ? due : "",
-      dziecko: specKey === "urlop_ojcowski" ? born || due : "", data: born, dni: "14", czesc: "1",
-      ...(qWeeks && specKey === "urlop_macierzynski" ? { rodzicielski: "Tak – w części", tygodnie: qWeeks } : {}),
-      ...(sp.get("jednolity") === "1" && specKey === "urlop_macierzynski" ? { stawka: "81,5% za cały okres (wniosek do 21 dni po porodzie)" } : {}),
-      ...(me?.przyjecie ? { podstawa: me.przyjecie.rodzaj === "zastepcza" ? "rodzina zastępcza niezawodowa" : "przysposobienie (wniosek do sądu złożony)" } : {}),
+      ...(emp ? { imieNazwisko: me ? `${me.imie} ${me.nazwisko}` : "", dokUrodzenia: "odpis skrócony aktu urodzenia", przyjete: me?.przyjecie ? (me.przyjecie.rodzaj === "zastepcza" ? "Tak – rodzina zastępcza (z wyjątkiem zawodowej)" : "Tak – przysposobienie (wniosek do sądu opiekuńczego)") : "Nie – dziecko urodzone", dataPrzyjecia: me?.przyjecie?.data ?? "", odroczenie: "Nie" } : {}),
+      ...(specKey === "urlop_rodzicielski" && macEnd ? { od: macEnd, do: addDays(macEnd, rodzWeeks * 7 - 1), wykorzystany: "nie wykorzystano", liczbaCzesci: "0", drugi: "nie zamierza korzystać z urlopu rodzicielskiego ani z zasiłku macierzyńskiego za ten okres", zaZyciem: "Nie" } : {}),
+      ...(specKey === "urlop_uzupelniajacy" && macEnd ? { koniecMac: addDays(macEnd, -1), od: macEnd } : {}),
+      ...(specKey === "urlop_ojcowski" ? { dataUrDziecka: born || due, od: born || "", do: born ? addDays(born, W.ojcowskiDni - 1) : "", przysposobione: me?.przyjecie?.rodzaj === "adopcja" ? "Tak" : "Nie", korzystal: "nie korzystałem z urlopu ojcowskiego" } : {}),
+      ...(specKey === "urlop_na_warunkach" && me?.przyjecie ? { podstawa: me.przyjecie.rodzaj === "zastepcza" ? "jako rodzina zastępcza, z wyjątkiem rodziny zastępczej zawodowej" : "i wystąpienie do sądu opiekuńczego z wnioskiem o wszczęcie postępowania w sprawie przysposobienia", dzieci: String(children), od: me.przyjecie.data, do: addDays(me.przyjecie.data, weeksByChildren(W.naWarunkachMacierzynskiego, children) * 7 - 1) } : {}),
+      ...((specKey === "urlop_wychowawczy" || specKey === "obnizenie_wymiaru") && child ? { dziecko: `${child.imie} ${me?.nazwisko ?? ""}`.trim() } : {}),
+      ...(specKey === "odpis_aktu" ? { data: born } : {}),
+      ...(SPECS.find((x) => x.key === specKey)?.official ? officialDefaults(specKey, me, title, due, children, params) : {}),
     };
-  }, [due, children, specKey, me, params, sp]);
+  }, [due, children, specKey, me, params, sp, title]);
   const data = { ...defaults, ...(drafts[specKey] ?? {}) };
   const setField = (k: string, val: string) => { setSent(null); setSendErr(""); setDrafts((d) => ({ ...d, [specKey]: { ...(d[specKey] ?? {}), [k]: val } })); };
 
@@ -313,7 +275,7 @@ function Wnioski() {
 
   return (
     <div className="wnioski-page">
-      <div className="card" data-guide="t-wnioski-lista">
+      <div className="card noprint" data-guide="t-wnioski-lista">
         <h1>Gdzie i jakie dokumenty złożyć?</h1>
         <p className="muted">Zasiłek wypłaca płatnik składek, jeśli zgłasza do ubezpieczenia chorobowego więcej niż {params.kwoty.progPlatnikaUbezpieczonych} osób – w pozostałych przypadkach ZUS. Przedsiębiorcom zawsze wypłaca ZUS.</p>
         <div className="grid g3">
@@ -345,36 +307,48 @@ function Wnioski() {
         {benefit === "chorobowy" && !suggested && <p className="muted mt">Przy zasiłku chorobowym pracownika i zleceniobiorcy wniosek nie jest potrzebny – wystarczy e-ZLA wystawione przez lekarza.</p>}
       </div>
 
-      <div className="section-title">Wypełnij wniosek</div>
-      <div className="pill-tabs mb" data-guide="t-wnioski-formularze">
-        {SPECS.map((s) => <button key={s.key} data-guide={`wniosek-${s.key}`} aria-pressed={s.key === specKey} className={s.key === specKey ? "on" : ""} onClick={() => chooseSpec(s.key)}>{s.title.split(" (")[0].replace("Wniosek o ", "")}</button>)}
+      <div className="section-title noprint">Wypełnij wniosek</div>
+      <div className="noprint" data-guide="t-wnioski-formularze">
+        {([
+          ["Formularze ZUS (wzory 1:1)", SPECS.filter((s) => s.official)],
+          ["Wnioski do pracodawcy (Dz.U. 2025 poz. 322)", SPECS.filter((s) => s.to === "Pracodawca")],
+          ["Inne", SPECS.filter((s) => !s.official && s.to !== "Pracodawca")],
+        ] as const).map(([label, list]) => (
+          <div key={label} className="mb">
+            <small className="muted" style={{ fontWeight: 600 }}>{label}</small>
+            <div className="pill-tabs" role="group" aria-label={label}>
+              {list.map((s) => <button key={s.key} data-guide={`wniosek-${s.key}`} aria-pressed={s.key === specKey} className={s.key === specKey ? "on" : ""} onClick={() => chooseSpec(s.key)}>{s.official ? s.key : tabLabel(s)}</button>)}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="grid wn-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", alignItems: "start" }}>
-        <div className="card" data-guide="t-wnioski-formularz">
+        <div className="card noprint" data-guide="t-wnioski-formularz">
           <h2>{spec.title}</h2>
           <p className="muted">{spec.desc} Adresat: <b>{recipient}</b>.</p>
+          {spec.par && <p className="muted" style={{ fontSize: 14 }}>Treść i załączniki według {spec.par} rozporządzenia MRPiPS z 11 marca 2025 r. (Dz.U. 2025 poz. 322).</p>}
           {wrongTitle && <div className="alert a-warn mb"><Icon name="alert" size={18} /><span>Ten wniosek składa pracownik u pracodawcy. Przy tytule „{TITLE_LABELS[title]}” złóż <button className="linkbtn" onClick={() => chooseSpec("ZAM")}>wniosek ZAM</button>{isSelfEmployed(title) ? " do ZUS" : ""}.</span></div>}
           {spec.zusForm && <p><a href={spec.zusForm} target="_blank" rel="noreferrer">Wzory formularzy na zus.pl ↗</a></p>}
-          <div className="grid" style={{ gap: 10 }}>
-            {spec.fields.filter((f) => f.name !== "tygodnie" || data.rodzicielski === "Tak – w części").map((f) => (
+          {spec.official ? <OfficialInputs form={spec.official} values={data} errors={touched ? errors : {}} onChange={setField} /> : <div className="grid" style={{ gap: 10 }}>
+            {spec.fields.filter((f) => !f.when || f.when(data)).map((f) => (
               <Field key={spec.key + f.name} f={f} value={data[f.name] ?? ""} error={touched ? errors[f.name] : undefined} onChange={(val) => setField(f.name, val)} />
             ))}
-          </div>
+          </div>}
           {drafts[specKey] && <button className="linkbtn mt" style={{ fontSize: 14 }} onClick={() => setDrafts((d) => { const n = { ...d }; delete n[specKey]; return n; })}>Wyczyść formularz</button>}
         </div>
         <div className="card wn-preview" data-guide="t-wnioski-podglad">
-          <div className="card-head"><h2 style={{ margin: 0 }}>Podgląd</h2><button className="btn btn-outline" data-guide="wnioski-drukuj" onClick={() => window.print()}><Icon name="print" size={16} /> Drukuj</button></div>
-          <div className="paper" style={{ fontFamily: "Georgia, serif", fontSize: 14 }}>
+          <div className="card-head noprint"><h2 style={{ margin: 0 }}>Podgląd</h2><button className="btn btn-outline" data-guide="wnioski-drukuj" onClick={() => window.print()}><Icon name="print" size={16} /> Drukuj</button></div>
+          {spec.official ? <OfficialPaper form={spec.official} values={data} /> : <div className="paper" style={{ fontFamily: "Georgia, serif", fontSize: 14 }}>
             <div style={{ textAlign: "right" }}>{fmtDate(today())}</div>
             <div>{header}</div>
             <div style={{ margin: "12px 0", textAlign: "right" }}><b>{recipient}</b></div>
             <div style={{ textAlign: "center", fontWeight: 700, margin: "10px 0" }}>{spec.title.replace(" (symulacja)", "").toUpperCase()}</div>
             <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
             <div style={{ marginTop: 24, textAlign: "right" }}>podpis: {me ? "podpis zaufany / mObywatel (symulacja)" : "……………"}</div>
-          </div>
+          </div>}
           {touched && errCount > 0 && <div className="alert a-err mt" role="alert"><Icon name="alert" size={18} /><span>Popraw {errCount === 1 ? "1 pole" : `${errCount} ${errCount < 5 ? "pola" : "pól"}`} w formularzu, aby wysłać wniosek.</span></div>}
           {sendErr && <div className="alert a-err mt" role="alert"><Icon name="alert" size={18} /><span>{sendErr}</span></div>}
-          <div className="row mt">
+          <div className="row mt noprint">
             <button className="btn btn-primary" data-guide="wnioski-wyslij" disabled={busy || wrongTitle} aria-disabled={busy || wrongTitle} onClick={send}><Icon name="send" size={18} /> {busy ? "Wysyłanie…" : `Wyślij do: ${recipient}`}</button>
           </div>
           {sent && <div className="alert a-ok mt" role="status"><Icon name="check" size={18} /><span>Wysłano (symulacja). Urzędowe poświadczenie odbioru: <b>{sent.upo}</b>. Status: {sent.status}</span></div>}
@@ -382,7 +356,7 @@ function Wnioski() {
       </div>
 
       {list.length > 0 && (
-        <div className="card mt">
+        <div className="card mt noprint">
           <h2>Wysłane w tej sesji</h2>
           <small>Lista jest widoczna tylko w tej karcie przeglądarki.</small>
           <div className="list">

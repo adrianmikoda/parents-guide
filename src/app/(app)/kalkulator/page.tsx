@@ -5,7 +5,7 @@ import Link from "next/link";
 import Icon from "@/components/Icon";
 import { api, useApp } from "@/components/AppContext";
 import { Check, Notes, Num, PeriodsTable, Seg, Slider, Timeline } from "@/components/ui";
-import { calculate, CalcInput, computeBase, diffDays, fmtDate, isValidDate, pct, r2, Title, TITLE_LABELS, zl } from "@/lib/engine";
+import { calculate, CalcInput, computeBase, diffDays, fmtDate, isValidDate, minMotherWeeks, MOTHER_SPECIAL_LABELS, MotherSpecial, pct, r2, Title, TITLE_LABELS, zl } from "@/lib/engine";
 import { sendApp } from "@/lib/apps-client";
 import ShareDialog from "@/components/Share";
 import { defaultCalcInput } from "@/lib/cases";
@@ -117,7 +117,7 @@ function Calculator() {
   const bothInsured = inp.mother.insured && inp.father.insured;
   const maxOne = inp.fullPoolException ? pool : pool - W.nieprzenoszalnaCzescTygodnie;
   const macWeeks = (adoptive ? W.naWarunkachMacierzynskiego : W.macierzynski)[Math.min(n, 5) - 1];
-  const maxTake = adoptive ? macWeeks : macWeeks - inp.mother.beforeBirthWeeks - W.macierzynskiObowiazkowoMatkaTygodnie;
+  const maxTake = adoptive ? macWeeks : macWeeks - inp.mother.beforeBirthWeeks - minMotherWeeks(inp.motherSpecial, params);
   const net = params.kwoty.zaliczkaPitProcent;
   const L = res.labels;
   const shareText = () => {
@@ -192,7 +192,8 @@ function Calculator() {
                     <div className="grid g3" style={{ padding: "4px 4px 8px" }}>
                       <Num label="Tydzień ciąży przy porodzie" value={inp.premature.tydzienCiazy} min={20} max={42} onChange={(v) => set({ premature: { ...inp.premature!, tydzienCiazy: v } })} />
                       <Num label="Masa urodzeniowa" suffix="g" min={0} value={inp.premature.masa} onChange={(v) => set({ premature: { ...inp.premature!, masa: v } })} />
-                      <Num label="Dni hospitalizacji" min={0} value={inp.premature.dniHospitalizacji} onChange={(v) => set({ premature: { ...inp.premature!, dniHospitalizacji: v } })} />
+                      <Num label="Dni pobytu dziecka w szpitalu" min={0} value={inp.premature.dniHospitalizacji} onChange={(v) => set({ premature: { ...inp.premature!, dniHospitalizacji: v } })} />
+                      <Num label="Pobyt od (dzień po porodzie, 0 = dzień porodu)" min={0} max={120} value={inp.premature.hospOdDnia ?? 0} onChange={(v) => set({ premature: { ...inp.premature!, hospOdDnia: v } })} />
                       <div className="field"><label>Kto korzysta</label>
                         <Seg label="Kto korzysta" value={inp.premature.who} onChange={(v) => set({ premature: { ...inp.premature!, who: v } })} options={[["matka", "Matka"], ["ojciec", "Ojciec"]]} />
                       </div>
@@ -260,6 +261,13 @@ function Calculator() {
               {inp.father.insured && (
                 <div className="grid mt2" style={{ gap: 12 }}>
                   <b>{L.B}</b>
+                  {inp.mother.insured && !adoptive && (
+                    <div className="field"><label htmlFor="kalk-spec-m">Sytuacja szczególna matki (przejęcie przed upływem {W.macierzynskiObowiazkowoMatkaTygodnie} tyg.)</label>
+                      <select id="kalk-spec-m" className="input" value={inp.motherSpecial ?? "brak"} onChange={(e) => set({ motherSpecial: e.target.value as MotherSpecial })}>
+                        {(Object.keys(MOTHER_SPECIAL_LABELS) as MotherSpecial[]).map((k) => <option key={k} value={k}>{MOTHER_SPECIAL_LABELS[k]}</option>)}
+                      </select>
+                    </div>
+                  )}
                   {inp.mother.insured && maxTake > 0 && <Slider label={adoptive ? "Część urlopu na warunkach macierzyńskiego" : "Przejęcie części urlopu macierzyńskiego"} value={inp.father.takeOverWeeks} min={0} max={maxTake} onChange={(v) => setF({ takeOverWeeks: v })} />}
                   {inp.scenario !== "zastepcza" && (
                     <Check checked={inp.father.ojcowski} onChange={(v) => setF({ ojcowski: v })} label={`Urlop ojcowski – ${W.ojcowskiDni} dni (${pct(params.stawki.ojcowski)})`} hint={`do ukończenia przez dziecko ${W.ojcowskiDoMiesiacaZycia} mies.`} />

@@ -22,8 +22,9 @@
 10. [Przechowywanie danych](#przechowywanie-danych)
 11. [Dostępność i wygląd](#dostępność-i-wygląd)
 12. [Mapowanie na wymagania wyzwania](#mapowanie-na-wymagania-wyzwania)
-13. [Założenia do weryfikacji z ZUS](#założenia-do-weryfikacji-z-zus)
-14. [Droga do produkcji](#droga-do-produkcji)
+13. [Zgodność formularzy z wzorami ZUS](#zgodność-formularzy-z-wzorami-zus)
+14. [Założenia do weryfikacji z ZUS](#założenia-do-weryfikacji-z-zus)
+15. [Droga do produkcji](#droga-do-produkcji)
 
 ---
 
@@ -46,7 +47,7 @@ Po zalogowaniu przez mObywatel (symulacja) aplikacja pobiera dane z ZUS albo poz
 | **Panel ogólny** | `/pulpit` | Podsumowanie sytuacji, najbliższe terminy, skróty do usług. |
 | **Kalkulator** | `/kalkulator` | Zasiłek macierzyński i rodzicielski dla obojga rodziców, w tym: liczba dzieci, „Za życiem”, wcześniak, martwe urodzenie / zgon dziecka, przejęcie urlopu, 9 tygodni nieprzenoszalnych, praca na ¼ / ⅓ / ½ etatu, porównanie 81,5% z 100% / 70%, adopcja i rodzina zastępcza. |
 | **W ciąży** | `/ciaza` | Zasiłek chorobowy w ciąży, świadczenie rehabilitacyjne, zasiłek w wysokości zasiłku macierzyńskiego, a także sytuacje bez prawa do świadczeń. |
-| **Wnioski i dokumenty** | `/wnioski` | Jakie dokumenty, gdzie (płatnik czy ZUS) i kiedy złożyć. Formularze wniosków o urlop macierzyński, rodzicielski, ojcowski i uzupełniający, o pracę na rodzicielskim, ZAM, ZAS-53 i odpis aktu urodzenia, z podglądem i symulowaną wysyłką (UPO). |
+| **Wnioski i dokumenty** | `/wnioski` | Jakie dokumenty, gdzie (płatnik czy ZUS) i kiedy złożyć. Formularze ZUS odwzorowane 1:1 ze wzorów (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 – zob. [Zgodność formularzy](#zgodność-formularzy-z-wzorami-zus)), wnioski do pracodawcy zgodne z rozporządzeniem Dz.U. 2025 poz. 322 (§ 2–§ 20: urlopy macierzyński, rodzicielski, ojcowski, uzupełniający, na warunkach macierzyńskiego, sytuacje szczególne, praca na rodzicielskim, urlop wychowawczy) oraz odpis aktu urodzenia – z podglądem wydruku i symulowaną wysyłką (UPO). |
 | **Moje dane ZUS** | `/zus` | Ubezpieczenie i podstawy wymiaru, podgląd e-ZLA, zaświadczenie o należnościach do uregulowania na wybrany dzień, zaświadczenia, pytanie do ZUS. |
 | **Mój profil** | `/profil` | Podgląd i poprawianie danych. Przy danych z ZUS zmienione pola są oznaczone i można przywrócić wartość z ZUS. |
 | **Sprawy testowe** | `/sprawy` | 12 wbudowanych spraw z oczekiwanym wynikiem oraz wgrywanie dokumentów PDF (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, poświadczenia, e-ZLA). |
@@ -132,12 +133,16 @@ src/
 │   ├── Shell.tsx               nagłówek, menu, logo, przyciski dostępności
 │   ├── AppContext.tsx          sesja, parametry, helper api()
 │   ├── FloatingGuide.tsx       pomocnik „gdzie kliknąć” + samouczek
+│   ├── OfficialForm.tsx        formularze ZUS: pola do wypełnienia + wydruk w układzie wzoru
 │   └── Icon.tsx  Markdown.tsx  Share.tsx  ui.tsx
 └── lib/
     ├── params.ts               parametry prawne (stawki, wymiary, terminy) + opisy do panelu
     ├── store.ts                zapis parametrów (data/params.json + historia)
     ├── engine.ts               silnik reguł: podstawa, kalkulator, ciąża, ryzyka, dokumenty
     ├── docparse.ts             parser dokumentów ZUS (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, e-ZLA…)
+    ├── zusforms.ts             wzory ZAM i ZAS-53 (treść 1:1) + walidacja
+    ├── zusforms-platnik.ts     wzory Z-3, Z-3a, ZAS-12 (treść 1:1) + walidacja
+    ├── wnioski-pracodawca.ts   wnioski do pracodawcy wg Dz.U. 2025 poz. 322 (§ 2–§ 20) + walidacja
     ├── mock.ts                 symulowane dane ZUS / mObywatel (fikcyjne osoby)
     ├── cases.ts                wbudowane sprawy testowe z oczekiwanym wynikiem
     ├── quiz.ts                 pytania ankiety (wspólne dla klienta i serwera)
@@ -235,7 +240,7 @@ Dane użytkowników nie są przechowywane na serwerze, więc działają tak samo
 | należności do uregulowania na dzień powstania prawa | `/zus` → Do uregulowania → `GET /api/zus/debt?date=` |
 | podgląd e-ZLA | `/zus` → e-ZLA → `GET /api/zus/ezla` |
 | PUE/eZUS (pytanie, dane konta) | `/zus` → Zadaj pytanie |
-| wnioski o urlopy i świadczenia + wysyłka | `/wnioski` (urlop macierzyński, rodzicielski, ojcowski, uzupełniający, praca na rodzicielskim, ZAM, ZAS-53) → `POST /api/applications` (UPO) |
+| wnioski o urlopy i świadczenia + wysyłka | `/wnioski` (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 w układzie wzorów ZUS; wnioski do pracodawcy wg Dz.U. 2025 poz. 322) → `POST /api/applications` (UPO) |
 | odpis aktu urodzenia | `/wnioski` → Odpis aktu urodzenia |
 | przekierowania do ZUS / MRPiPS / PIP | `/wsparcie` → Oficjalne źródła |
 | panel administracyjny parametrów | `/admin` → `GET/PUT/DELETE /api/params` (wersjonowanie + historia zmian) |
@@ -244,9 +249,88 @@ Dane użytkowników nie są przechowywane na serwerze, więc działają tak samo
 
 ---
 
+## Zgodność formularzy z wzorami ZUS
+
+Formularze, które wypełnia ubezpieczony albo płatnik składek, odwzorowują wzory ZUS z 2026 r. Jeden opis formularza (`src/lib/zusforms.ts`, `src/lib/zusforms-platnik.ts`) służy zarówno do wypełniania na ekranie, jak i do wydruku – teksty na ekranie i na papierze nie mogą się rozjechać.
+
+| Formularz | Kto wypełnia | Wzór (nr zamówienia druku) | Kiedy |
+|---|---|---|---|
+| **ZAM** – Wniosek o zasiłek macierzyński | ubezpieczony | 2965/26, Informacja 2993/26 | wszystkie okresy: macierzyński / na warunkach, rodzicielski, uzupełniający, ojcowski |
+| **ZAS-53** – Wniosek o zasiłek chorobowy | ubezpieczony | 2869/26 | działalność, osoby współpracujące, duchowni, marynarze, niezdolność po ustaniu ubezpieczenia |
+| **Z-3** – Zaświadczenie płatnika składek | płatnik (pracodawca) | 2924/26 | pracownik, gdy zasiłek ustala ZUS |
+| **Z-3a** – Zaświadczenie płatnika składek | płatnik (np. zleceniodawca) | 2929/26 | ubezpieczeni z innych tytułów (bez działalności, duchownych, marynarzy) |
+| **ZAS-12** – Zaświadczenie płatnika składek | płatnik | 2923/26 | zasiłek chorobowy / opiekuńczy za dalszy okres |
+
+### Co odwzorowano 1:1
+
+- **Układ i treść:** kolejność sekcji i pól, etykiety, podpowiedzi pod polami, pola wyboru, pytania TAK/NIE, oświadczenia, „Instrukcja wypełniania”, „Pouczenie” / „Informacja do wniosku”, klauzula RODO i pouczenie o art. 63 ustawy zasiłkowej.
+- **Tabele w Z-3 i Z-3a:** nagłówki (także grupy kolumn), numeracja kolumn i liczba wierszy jak na wzorze.
+- **Tekst dosłownie** – łącznie z błędami wzoru, np. „sytemu” (ZAS-12), „jeżeli nadano numeru PESEL” (Z-3a), „wykazane sekcji” (Z-3). Poprawiono tylko błędy powstałe przy odczycie tekstu z PDF (np. „niedłużej” → „nie dłużej”, „profi lu” → „profilu”).
+- **Wydruk:** kratki na PESEL, NIP, REGON, rachunek i daty (dd/mm/rrrr), znak X w polach wyboru, wartości WIELKIMI LITERAMI (zgodnie z instrukcją wzoru), „Informacja” do ZAM na osobnej stronie.
+- **Wypełnianie z profilu:** dane osoby, płatnika, daty urlopu, e-ZLA, a w Z-3 / Z-3a – przychody z 12 miesięcy. Adresu ani miejsca urodzenia aplikacja nie zgaduje.
+
+### Świadome różnice
+
+- Logo ZUS nie jest grafiką – nagłówek odtworzono tekstem i kolorem.
+- Podział na strony wyznacza przeglądarka; nie ma numeracji „Strona x z y” ani stopki „Skład: Poligrafia ZUS…”.
+- Pola „okres (od–do)” na ekranie to dwa pola daty, a seria i numer e-ZLA – osobne pole; na wydruku wszystko trafia do jednego pola, jak na wzorze.
+- Podpis: odręczny na wydruku, przy wysyłce elektronicznej – symulowany podpis zaufany.
+
+### Walidacja
+
+Sprawdzane są zasady wynikające z treści wzorów i przepisów, m.in.:
+
+- PESEL, NIP i REGON (cyfra kontrolna) oraz reguła „podaj, jeśli nie ma nadanego …” (np. bez PESEL – data urodzenia i dokument tożsamości);
+- polski kod pocztowy 00-000, rachunek 26 cyfr;
+- okresy: kolejność dat, wymiar urlopu macierzyńskiego wg liczby dzieci, maks. 6 tyg. przed porodem, rodzicielski w maks. 5 częściach do końca roku, w którym dziecko kończy 6 lat, ojcowski 7–14 dni w maks. 2 częściach do 12. miesiąca życia;
+- stawka 81,5% tylko przy wniosku do 21 dni po porodzie i tylko razem z urlopem rodzicielskim;
+- uzupełniający urlop macierzyński: zaznaczona okoliczność urodzenia i okres pobytu w szpitalu (od 37. tyg. – min. 2 dni, pierwszy między 5. a 28. dniem po porodzie);
+- pola „Jeśli TAK …” wymagane po zaznaczeniu TAK, wykluczające się odpowiedzi (np. „do 20” / „powyżej 20 ubezpieczonych”, „NIE” w pkt 6 Z-3);
+- tabele: rok RRRR, miesiąc 1–12, kwartał 1–4, liczba dni, kwoty, procent potrąconej składki 0–100.
+
+### Czego nie ma i dlaczego
+
+- **ZUR i ZAO** – takie formularze nie istnieją; zakres wniosku ZAM obejmuje wszystkie okresy zasiłku macierzyńskiego.
+- **Z-3b** – nie jest używany: „Informacja” do ZAM wymienia tylko Z-3 i Z-3a, a osoba prowadząca działalność nie składa zaświadczenia płatnika (ZAS-53 / ZAM bez Z-3).
+- **e-ZLA** – wystawia lekarz; aplikacja tylko je odczytuje.
+- **Wnioski do pracodawcy** – to nie są formularze ZUS i nie mają urzędowego wzoru graficznego; ich treść i załączniki określa rozporządzenie (zob. niżej).
+
+### Wnioski do pracodawcy – zgodność z Dz.U. 2025 poz. 322
+
+Rozporządzenie MRPiPS z 11 marca 2025 r. w sprawie wniosków dotyczących uprawnień pracowników związanych z rodzicielstwem nie ustala wyglądu wniosku – ustala, co wniosek **zawiera** i jakie dokumenty się do niego **dołącza**. Aplikacja tworzy dla każdego paragrafu osobny wniosek (`src/lib/wnioski-pracodawca.ts`):
+
+| § | Wniosek | Podstawa w Kodeksie pracy |
+|---|---|---|
+| 2 | część urlopu macierzyńskiego przed przewidywaną datą porodu | art. 180 § 2 |
+| 3, 4 | rezygnacja z pozostałej części urlopu macierzyńskiego (na warunkach) i powrót do pracy – po 14 tyg. albo po 8 tyg. przy orzeczeniu o niezdolności do samodzielnej egzystencji | art. 180 § 8 |
+| 5 | pozostała część urlopu macierzyńskiego / na warunkach / rodzicielskiego dla ojca lub innego członka najbliższej rodziny | art. 180 § 9 |
+| 6–13 | część urlopu w sytuacji szczególnej: pobyt matki w szpitalu (§ 6, § 7), zgon (§ 8, § 10), porzucenie dziecka (§ 9, § 11), matka nieubezpieczona z orzeczeniem (§ 12), matka bez tytułu do ubezpieczenia podejmuje zatrudnienie (§ 13) | art. 180 § 16, § 17 |
+| 14 | uzupełniający urlop macierzyński | art. 180² § 4, art. 183 § 3¹ |
+| 15 | urlop rodzicielski lub jego część | art. 182¹ᵈ § 1, art. 183 § 4–4² |
+| 16 | łączenie urlopu rodzicielskiego z pracą | art. 182¹ᵉ § 2 |
+| 17 | urlop ojcowski lub jego część | art. 182³ § 2 |
+| 18 | urlop na warunkach urlopu macierzyńskiego | art. 183 § 6 |
+| 19 | urlop wychowawczy lub jego część | art. 186 § 7 |
+| 20 | obniżenie wymiaru czasu pracy zamiast urlopu wychowawczego | art. 186⁷ § 1 |
+
+Jak zapewniono zgodność:
+
+- **Treść wniosku** to ponumerowane elementy z „ust. 1” danego paragrafu, w brzmieniu rozporządzenia (np. „wskazanie okresu, na który ma być udzielony urlop rodzicielski lub ma być udzielona jego część: …”), z wartościami wpisanymi przez pracownika.
+- **Załączniki** są wymienione w brzmieniu rozporządzenia i zależą od sytuacji: np. kopia zaświadczenia „Za życiem” tylko przy wydłużonym urlopie rodzicielskim, kopia postanowienia o przysposobieniu tylko przy dziecku przysposobionym, dokumenty z „ust. 4” (przyjęcie dziecka na wychowanie, odroczenie obowiązku szkolnego) tylko przy dziecku przyjętym na wychowanie.
+- **Oświadczenia**, które rozporządzenie wymaga dołączyć (np. o zamiarach drugiego rodzica, o korzystaniu z urlopu ojcowskiego), są wpisane w treść pisma.
+- **„Stosuje się odpowiednio” (ust. 3):** wnioski z § 5–§ 13 można złożyć także dla urlopu na warunkach urlopu macierzyńskiego i urlopu rodzicielskiego – nazwy urlopu w treści zmieniają się automatycznie, a element o urlopie „wykorzystanym przed porodem” (dotyczy tylko urlopu macierzyńskiego) jest wtedy pomijany. Przy § 15 dla dziecka przyjętego na wychowanie stosuje się tylko ust. 1, więc załącznikami są wyłącznie dokumenty z ust. 4.
+- **§ 21–§ 23:** zagraniczny dokument urodzenia spoza UE/EFTA/Szwajcarii/państw umów o zabezpieczeniu społecznym (lub nie w ich języku urzędowym) dostaje dopisek o tłumaczeniu na język polski; dokumenty z akt osobowych można wskazać i nie są wtedy dołączane; przy kopiach pismo zawiera zobowiązanie do okazania oryginałów na żądanie pracodawcy.
+- **Walidacja** pilnuje warunków z rozporządzenia i Kodeksu pracy: np. 6 tyg. przed porodem (§ 2), powrót do pracy najwcześniej po 14 / 8 tyg. (§ 3, § 4), przejęcie po 8 tyg. w sytuacjach z § 6, § 7, § 9, data przejęcia po dniu zgonu / porzucenia (§ 8–§ 11), w § 13 wnioskuje tylko ojciec, uzupełniający urlop bezpośrednio po macierzyńskim i w pełnych tygodniach, urlop rodzicielski w maks. 5 częściach i w granicach puli, urlop ojcowski 7–14 dni do 12. miesiąca życia (przy przysposobieniu – 12 mies. od uprawomocnienia), urlop wychowawczy do 36 mies., wnioski składane co najmniej 21 dni wcześniej tam, gdzie wymaga tego Kodeks pracy.
+
+### Gdy ZUS zmieni wzór
+
+Treść każdego formularza jest w jednym miejscu (`ZAM`, `ZAS53` w `zusforms.ts`; `Z3`, `Z3A`, `ZAS12` w `zusforms-platnik.ts`). Zmiana etykiety lub dodanie pola to edycja tej listy – ekran, wydruk i walidacja korzystają z niej automatycznie. Numer zamówienia druku w komentarzu na górze pliku wskazuje wersję wzoru, z którą porównano formularz.
+
+---
+
 ## Założenia do weryfikacji z ZUS
 
-- Wymiar uzupełniającego urlopu macierzyńskiego: maks. 15 / 8 / 3 tygodnie oraz próg 14 dni hospitalizacji przy porodzie od 37. tygodnia, liczone według rozpoczętych tygodni hospitalizacji. Wartości można zmienić w panelu.
+- Uzupełniający urlop macierzyński liczony wg „Informacji” do ZAM: tydzień urlopu za każdy tydzień pobytu dziecka w szpitalu – do upływu 15. tyg. po porodzie (przed 28. tyg. ciąży lub ≤1000 g), do upływu 8. tyg. (28–36 tyg., >1000 g); od 37. tyg. – pobyt min. 2 kolejne dni, pierwszy między 5. a 28. dniem po porodzie, liczony od 5. dnia do upływu 8. tyg. Założenia aplikacji: niepełny tydzień liczy się jako pełny, dzień porodu = dzień 0. Wartości można zmienić w panelu.
 - 9 tygodni urlopu rodzicielskiego nie przechodzi na drugiego rodzica, gdy ten nie jest ubezpieczony. Pełna pula przysługuje tylko w wyjątkach ustawowych (przełącznik w kalkulatorze).
 - Kwota netto jest orientacyjna: zaliczka PIT 12%, bez kwoty zmniejszającej.
 - Zasiłek za miesiąc = podstawa × stawka. Zasiłek za okres = stawka dzienna (1/30) × liczba dni.

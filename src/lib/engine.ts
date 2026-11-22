@@ -113,6 +113,22 @@ export function computeBase(inp: BaseInput, p: Params) {
 
 export type Scenario = "porod" | "adopcja" | "zastepcza";
 
+export type MotherSpecial = "brak" | "niezdolnosc" | "szpital" | "zgon" | "porzucenie";
+export const MOTHER_SPECIAL_LABELS: Record<MotherSpecial, string> = {
+  brak: "Brak – matka wykorzystuje min. 14 tyg.",
+  niezdolnosc: "Matka ma orzeczenie o niezdolności do samodzielnej egzystencji lub o niepełnosprawności w stopniu znacznym",
+  szpital: "Matka przebywa w szpitalu / zakładzie leczniczym",
+  zgon: "Zgon matki",
+  porzucenie: "Porzucenie dziecka przez matkę",
+};
+
+/** Minimalna liczba tygodni macierzyńskiego po porodzie, które musi wykorzystać matka, zanim ojciec przejmie resztę. */
+export function minMotherWeeks(s: MotherSpecial | undefined, p: Params) {
+  if (s === "zgon" || s === "porzucenie") return 0;
+  if (s === "niezdolnosc" || s === "szpital") return p.wymiary.macierzynskiMinMatkaSytuacjaSzczegolna;
+  return p.wymiary.macierzynskiObowiazkowoMatkaTygodnie;
+}
+
 export type ParentInput = {
   insured: boolean;
   base: number;
@@ -131,9 +147,12 @@ export type CalcInput = {
   zaZyciem: boolean;
   childAgeYears?: number; // adopcja / rodzina zastępcza
   odroczenieSzkolne?: boolean;
-  premature?: { enabled: boolean; tydzienCiazy: number; masa: number; dniHospitalizacji: number; who: "matka" | "ojciec" };
+  /** hospOdDnia – dzień po porodzie, w którym zaczął się pobyt dziecka w szpitalu (0 = dzień porodu) */
+  premature?: { enabled: boolean; tydzienCiazy: number; masa: number; dniHospitalizacji: number; hospOdDnia?: number; who: "matka" | "ojciec" };
   stillbirth?: boolean;
   childDeathDay?: number | null; // dzień życia, w którym nastąpił zgon (null – nie dotyczy)
+  /** sytuacja szczególna matki pozwalająca ojcu przejąć macierzyński przed upływem 14 tyg. (Kodeks pracy, ustawa zasiłkowa) */
+  motherSpecial?: MotherSpecial;
   mother: ParentInput & { beforeBirthWeeks: number; jednolity: boolean };
   father: ParentInput & { takeOverWeeks: number; ojcowski: boolean; ojcowskiStart?: string };
   rodzicielskiMode: "kolejno" | "jednoczesnie";
@@ -320,16 +339,31 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
       if (M.jednolity) warnings.push("Stawka 81,5% nie ma zastosowania – po stracie dziecka urlop rodzicielski nie przysługuje; zasiłek wynosi 100%.");
     } else {
       const takeOver = M.insured && F.insured ? Math.max(0, F.takeOverWeeks || 0) : 0;
-      const maxTakeOver = macWeeks - before - W.macierzynskiObowiazkowoMatkaTygodnie;
+      const special = inp.motherSpecial ?? "brak";
+      const minMother = minMotherWeeks(special, p);
+      const maxTakeOver = macWeeks - before - minMother;
       let tko = takeOver;
       if (tko > maxTakeOver) {
-        warnings.push(`Ojciec może przejąć maks. ${maxTakeOver} tyg. – matka musi wykorzystać co najmniej ${W.macierzynskiObowiazkowoMatkaTygodnie} tyg. po porodzie (poza sytuacjami szczególnymi: hospitalizacja, niezdolność do samodzielnej egzystencji, zgon matki).`);
+        warnings.push(
+          special === "brak"
+            ? `Ojciec może przejąć maks. ${maxTakeOver} tyg. – matka musi wykorzystać co najmniej ${W.macierzynskiObowiazkowoMatkaTygodnie} tyg. po porodzie (poza sytuacjami szczególnymi: hospitalizacja, niezdolność do samodzielnej egzystencji, zgon matki, porzucenie dziecka).`
+            : `Ojciec może przejąć maks. ${maxTakeOver} tyg. pozostałej części urlopu macierzyńskiego.`
+        );
         tko = Math.max(0, maxTakeOver);
+      }
+      if (special !== "brak" && tko > 0) {
+        info.push(
+          special === "szpital"
+            ? `Matka w szpitalu: po wykorzystaniu przez nią co najmniej ${minMother} tyg. po porodzie ojciec przejmuje urlop na okres odpowiadający pobytowi matki w szpitalu (matka przerywa urlop). Dokument: zaświadczenie ze szpitala.`
+            : special === "niezdolnosc"
+              ? `Niezdolność matki do samodzielnej egzystencji: po wykorzystaniu przez nią co najmniej ${minMother} tyg. po porodzie ojciec przejmuje pozostałą część urlopu. Dokument: orzeczenie o niezdolności do samodzielnej egzystencji lub o niepełnosprawności w stopniu znacznym.`
+              : `${special === "zgon" ? "Zgon matki" : "Porzucenie dziecka przez matkę"}: ojciec przejmuje pozostałą część urlopu macierzyńskiego (bez wymogu 14 tyg.). Dokument: ${special === "zgon" ? "odpis aktu zgonu" : "dokument potwierdzający porzucenie dziecka"}.`
+        );
       }
       if (M.insured) {
         const startA = addDays(ev, -before * 7);
         const pA = mkPeriod("A", "macierzynski", "Urlop macierzyński", macWeeks - tko, startA, rateA_mac, M.base, p);
-        periods.push(pA);
+        if (pA.days > 0) periods.push(pA);
         cursorA = addDays(pA.end, 1);
         if (before > 0) info.push(`Matka rozpoczyna urlop ${before} tyg. przed przewidywaną datą porodu (wymagane zaświadczenie lekarskie o przewidywanej dacie porodu).`);
         if (tko > 0) {
@@ -345,29 +379,48 @@ export function calculate(inp: CalcInput, p: Params): CalcResult {
       // ── uzupełniający urlop macierzyński ──
       if (inp.premature?.enabled) {
         const pr = inp.premature;
+        // ZAM – Informacja, pkt II: tydzień urlopu za każdy tydzień pobytu dziecka w szpitalu w oknie zależnym od
+        // tygodnia ciąży i masy urodzeniowej. Dni liczymy od dnia porodu (dzień 0); niepełny tydzień zaokrąglamy w górę.
+        const hospFrom = Math.max(0, Math.round(pr.hospOdDnia ?? 0));
+        const hospDays = Math.max(0, Math.round(pr.dniHospitalizacji || 0));
+        const hospTo = hospFrom + hospDays - 1;
+        const overlap = (a: number, b: number) => Math.max(0, Math.min(hospTo, b) - Math.max(hospFrom, a) + 1);
         let cap = 0;
         let rule = "";
+        let counted = 0;
+        let eligible = true;
         if (pr.tydzienCiazy < 28 || (pr.masa > 0 && pr.masa <= 1000)) {
           cap = W.uzupelniajacyPonizej28TygLub1000g;
-          rule = "poród przed 28. tyg. ciąży lub masa urodzeniowa do 1000 g";
+          rule = `poród przed ukończeniem 28. tyg. ciąży lub masa urodzeniowa nie większa niż 1000 g – pobyt w szpitalu do upływu ${cap}. tyg. po porodzie`;
+          counted = overlap(0, cap * 7 - 1);
         } else if (pr.tydzienCiazy < 37) {
           cap = W.uzupelniajacy28do36Tyg;
-          rule = "poród między 28. a 36. tygodniem ciąży";
-        } else if (pr.dniHospitalizacji >= W.uzupelniajacyMinDniHospitalizacjiOd37) {
-          cap = W.uzupelniajacyOd37Tyg;
-          rule = `poród od 37. tyg. i hospitalizacja co najmniej ${W.uzupelniajacyMinDniHospitalizacjiOd37} dni`;
+          rule = `poród po ukończeniu 28. i przed ukończeniem 37. tyg. ciąży, masa powyżej 1000 g – pobyt w szpitalu do upływu ${cap}. tyg. po porodzie`;
+          counted = overlap(0, cap * 7 - 1);
+        } else {
+          cap = W.uzupelniajacyOd37OknoTyg;
+          const d0 = W.uzupelniajacyOd37PierwszyDzienOd;
+          // co najmniej N kolejnych dni pobytu, z których pierwszy przypada między 5. a 28. dniem po porodzie
+          const firstQualifying = Math.max(hospFrom, d0);
+          eligible = hospDays > 0 && firstQualifying <= W.uzupelniajacyOd37PierwszyDzienDo && hospTo - firstQualifying + 1 >= W.uzupelniajacyOd37MinKolejnychDni;
+          rule = `poród po ukończeniu 37. tyg. ciąży – pobyt w szpitalu od ${d0}. dnia do upływu ${cap}. tyg. po porodzie`;
+          counted = eligible ? overlap(d0, cap * 7 - 1) : 0;
         }
-        const weeksHosp = Math.ceil((pr.dniHospitalizacji || 0) / 7);
-        const uw = Math.min(cap, weeksHosp || cap);
-        if (cap === 0) {
+        const weeksHosp = Math.ceil(counted / 7);
+        const uw = Math.min(cap, weeksHosp);
+        if (pr.tydzienCiazy >= 37 && !(pr.masa > 0 && pr.masa <= 1000) && !eligible && hospDays > 0) {
+          warnings.push(`Przy porodzie po 37. tyg. ciąży uzupełniający urlop przysługuje, gdy dziecko przebywa w szpitalu co najmniej ${W.uzupelniajacyOd37MinKolejnychDni} kolejne dni, a pierwszy z nich przypada między ${W.uzupelniajacyOd37PierwszyDzienOd}. a ${W.uzupelniajacyOd37PierwszyDzienDo}. dniem po porodzie.`);
+        } else if (cap === 0) {
           warnings.push("Wskazane warunki nie dają prawa do uzupełniającego urlopu macierzyńskiego (sprawdź tydzień ciąży, masę urodzeniową i czas hospitalizacji).");
+        } else if (uw === 0) {
+          warnings.push("Uzupełniający urlop macierzyński przysługuje za okres hospitalizacji dziecka – podaj liczbę dni pobytu w szpitalu (wynika z zaświadczenia szpitala).");
         } else {
           const toB = (pr.who === "ojciec" && F.insured) || !M.insured;
           const macEnd = periods.map((x) => x.end).sort().at(-1);
           const start = macEnd ? addDays(macEnd, 1) : ev;
           const per = mkPeriod(toB ? "B" : "A", "uzupelniajacy", "Uzupełniający urlop macierzyński", uw, start, S.uzupelniajacy, toB ? F.base : M.base, p);
           periods.push(per);
-          info.push(`Uzupełniający urlop macierzyński: ${uw} tyg. (${rule}; liczba tygodni hospitalizacji: ${weeksHosp}, maks. ${cap}). Udzielany jednorazowo, bezpośrednio po urlopie macierzyńskim; dokument: zaświadczenie ze szpitala.`);
+          info.push(`Uzupełniający urlop macierzyński: ${uw} tyg. (${rule}; zaliczone dni pobytu: ${counted}). Udzielany jednorazowo, bezpośrednio po urlopie macierzyńskim, bez dzielenia na części i bez podziału między rodziców; dokument: zaświadczenie ze szpitala.`);
         }
       }
     }
@@ -623,11 +676,14 @@ export function pregnancyBenefits(inp: PregnancyInput, p: Params): BenefitResult
   // Ochrona umowy
   if (isEmployee(inp.title)) {
     const d: string[] = [
-      "W okresie ciąży i urlopów związanych z rodzicielstwem pracodawca nie może wypowiedzieć ani rozwiązać umowy (poza wyjątkami: wina pracownicy za zgodą związku, upadłość/likwidacja).",
+      "W okresie ciąży i urlopu macierzyńskiego, a także od dnia złożenia wniosku o urlop macierzyński, na warunkach urlopu macierzyńskiego, uzupełniający, ojcowski lub rodzicielski (albo ich część) – do dnia zakończenia urlopu – pracodawca nie może prowadzić przygotowań do wypowiedzenia ani rozwiązania umowy bez wypowiedzenia.",
+      "Pracodawca nie może też wypowiedzieć ani rozwiązać umowy, chyba że zachodzą przyczyny uzasadniające rozwiązanie bez wypowiedzenia z winy pracownicy i reprezentująca ją zakładowa organizacja związkowa wyraziła na to zgodę (odrębne zasady obowiązują przy upadłości lub likwidacji pracodawcy).",
     ];
     if (inp.contractKind === "okreslony" || inp.contractKind === "probny")
       d.push("Umowa na czas określony lub okres próbny dłuższy niż 1 miesiąc, która rozwiązałaby się po upływie 3. miesiąca ciąży, ulega przedłużeniu do dnia porodu – dzięki temu podlegasz ubezpieczeniu w dniu porodu.");
     out.push({ key: "ochrona", name: "Szczególna ochrona stosunku pracy", status: "informacja", summary: "Jako pracownica jesteś chroniona przez Kodeks pracy.", details: d });
+  } else {
+    out.push({ key: "ochrona", name: "Szczególna ochrona stosunku pracy", status: "nie_przysluguje", summary: "Szczególna ochrona z Kodeksu pracy nie dotyczy osób, które nie są pracownikami (np. zleceniobiorczyń, osób prowadzących działalność).", details: ["Umowa zlecenia lub działalność nie przedłuża się z mocy prawa do dnia porodu – zadbaj, aby w dniu porodu podlegać ubezpieczeniu chorobowemu."] });
   }
   return out;
 }
@@ -671,7 +727,10 @@ export function assessRisks(r: RiskInput, p: Params): Risk[] {
     }
   }
   if (r.contractEnd && r.dueDate && r.contractEnd < r.dueDate) {
-    const protectedExt = r.title === "umowa_o_prace" && (r.contractKind === "okreslony" || r.contractKind === "probny");
+    // przedłużenie do dnia porodu: tylko umowa terminowa/próbna (> 1 mies.), która rozwiązałaby się po upływie 3. miesiąca ciąży
+    const pregStart = r.pregnancyStart ?? addDays(r.dueDate, -280);
+    const after3rdMonth = r.contractEnd > addMonths(pregStart, 3);
+    const protectedExt = r.title === "umowa_o_prace" && (r.contractKind === "okreslony" || r.contractKind === "probny") && after3rdMonth;
     out.push(
       protectedExt
         ? { level: "niskie", title: "Umowa terminowa kończy się przed porodem", text: "Umowa o pracę na czas określony (lub próbna > 1 mies.), która rozwiązałaby się po 3. miesiącu ciąży, z mocy prawa przedłuża się do dnia porodu.", action: "Poinformuj pracodawcę o ciąży (zaświadczenie lekarskie). Po porodzie umowa wygasa – zasiłek macierzyński wypłaci ZUS." }
@@ -713,15 +772,15 @@ export function documentsFor(title: Title, benefit: "chorobowy" | "macierzynski"
   } else if (benefit === "ojcowski") {
     if (isEmployee(title)) {
       s.push({ doc: "Wniosek o urlop ojcowski", to: "pracodawca", when: `min. ${p.terminy.wniosekOjcowskiDniPrzed} dni przed rozpoczęciem` });
-      if (payer === "zus") s.push({ doc: "Z-3 + wniosek ZAM", to: "ZUS (przekazuje pracodawca)", when: "po udzieleniu urlopu" });
-    } else s.push({ doc: "ZAM – wniosek o zasiłek macierzyński (część: urlop ojcowski)", to: payer === "zus" ? zusVia : payerName, when: "w okresie do 12 mies. życia dziecka", note: "Formularz ZAO połączono z ZAM od 24.10.2026 r." });
+      if (payer === "zus") s.push({ doc: "Z-3 (zaświadczenie płatnika) + wniosek o urlop ojcowski", to: "ZUS (przekazuje pracodawca)", when: "po udzieleniu urlopu" });
+    } else s.push({ doc: "ZAM – wniosek o zasiłek macierzyński (część: urlop ojcowski)", to: payer === "zus" ? zusVia : payerName, when: "w okresie do 12 mies. życia dziecka" });
   } else {
     if (isEmployee(title)) {
       const leave = benefit === "adopcja" ? "urlop na warunkach urlopu macierzyńskiego" : benefit === "rodzicielski" ? "urlop rodzicielski" : benefit === "uzupelniajacy" ? "uzupełniający urlop macierzyński" : "urlop macierzyński (może być łącznie z rodzicielskim)";
       s.push({ doc: `Wniosek o ${leave}`, to: "pracodawca", when: benefit === "rodzicielski" ? `${p.terminy.wniosekMacierzynskiPoPorodzieDni} dni po porodzie (bezpośrednio po macierzyńskim) lub ${p.terminy.wniosekRodzicielskiDniPrzed} dni przed rozpoczęciem` : "przed rozpoczęciem urlopu / po porodzie" });
       if (payer === "zus") s.push({ doc: "Z-3 (zaświadczenie płatnika) + wniosek o urlop", to: "ZUS (przekazuje pracodawca)", when: "po udzieleniu urlopu" });
     } else {
-      s.push({ doc: "ZAM – wniosek o zasiłek macierzyński", to: payer === "zus" ? zusVia : payerName, when: benefit === "rodzicielski" ? `do ${p.terminy.wniosekMacierzynskiPoPorodzieDni} dni po porodzie, aby zachować ciągłość` : "po porodzie / przyjęciu dziecka", note: "ZUR połączono z ZAM od 24.10.2026 r." });
+      s.push({ doc: "ZAM – wniosek o zasiłek macierzyński", to: payer === "zus" ? zusVia : payerName, when: benefit === "rodzicielski" ? `do ${p.terminy.wniosekMacierzynskiPoPorodzieDni} dni po porodzie, aby zachować ciągłość` : "po porodzie / przyjęciu dziecka" });
       if (title === "zlecenie_chorobowe" && payer === "zus") s.push({ doc: "Z-3a (zaświadczenie płatnika)", to: "ZUS (przekazuje zleceniodawca)", when: "po złożeniu ZAM" });
     }
     s.push({ doc: "Skrócony odpis aktu urodzenia (lub dane z rejestru stanu cywilnego)", to: payerName, when: "po rejestracji urodzenia w USC", note: "Odpis zamówisz online – zakładka Wnioski" });

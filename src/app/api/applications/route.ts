@@ -12,11 +12,19 @@ const ADRESAT: Record<string, string> = {
   praca_rodzicielski: "Pracodawca",
   ZAM: "ZUS (PUE/eZUS)",
   "ZAS-53": "ZUS (PUE/eZUS)",
+  "Z-3": "ZUS (PUE/eZUS)",
+  "Z-3a": "ZUS (PUE/eZUS)",
+  "ZAS-12": "ZUS (PUE/eZUS)",
   odpis_aktu: "Urząd Stanu Cywilnego (rejestr stanu cywilnego)",
   pytanie_pue: "ZUS – Centrum Obsługi Telefonicznej / e-wizyta",
   zaswiadczenie: "ZUS (PUE/eZUS)",
   plan_urlopow: "Moje dokumenty (zapis planu)",
   urlop_na_warunkach: "Pracodawca",
+  rezygnacja_macierzynski: "Pracodawca",
+  pozostala_czesc: "Pracodawca",
+  czesc_sytuacja: "Pracodawca",
+  urlop_wychowawczy: "Pracodawca",
+  obnizenie_wymiaru: "Pracodawca",
 };
 const MAX_BODY = 64 * 1024;
 
