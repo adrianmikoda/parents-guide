@@ -5,7 +5,7 @@ import { currentPersona, json } from "@/lib/session";
 
 /** POST { question, path } → { answer, steps: string[] (id celów), mode: "ai" | "reguly" } */
 export async function POST(req: Request) {
-  const { question = "", path = "/pulpit" } = (await req.json().catch(() => ({}))) as { question?: string; path?: string };
+  const { question = "", path = "/pulpit", lang } = (await req.json().catch(() => ({}))) as { question?: string; path?: string; lang?: string };
   const q = String(question).slice(0, 500);
   const me = await currentPersona(req);
   // kontekst konta: dane z ankiety można poprawić w aplikacji, dane „z ZUS” – nie
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     : "Jestem zalogowany kontem z danymi pobranymi z ZUS – mogę je nadpisać w Moim profilu (profil-zrodlo); zmiany nie trafiają do ZUS.";
   if (aiEnabled() && allow(`guide:${clientKey(req)}`, 30, 10 * 60_000)) {
     try {
-      const r = await askGuideAI(q, String(path), TARGETS, PAGES, account);
+      const r = await askGuideAI(q, String(path), TARGETS, PAGES, account, lang === "en" ? "en" : "pl");
       if (r) return json({ ...r, mode: "ai" });
     } catch (e) {
       return json({ ...matchGuide(q), mode: "reguly", error: e instanceof Error ? e.message : "AI niedostępne" });

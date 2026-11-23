@@ -7,6 +7,7 @@ import { useDialog } from "./useDialog";
 import Markdown from "./Markdown";
 import { api } from "./AppContext";
 import { PAGES, targetById } from "@/lib/guide";
+import { getLang, t } from "@/lib/i18n";
 
 /* ── Włączanie / wyłączanie pomocnika (opcjonalny, zapamiętywany w przeglądarce) ── */
 const PREF = "guide-off";
@@ -365,10 +366,10 @@ export default function FloatingGuide() {
     setText("");
     setBusy(true);
     let r: { answer?: string; steps?: string[]; mode?: string } = {};
-    try { r = await api("/api/guide", { question: q, path }); } catch {}
+    try { r = await api("/api/guide", { question: q, path, lang: getLang() }); } catch {}
     setBusy(false);
     setMode(r.mode ?? "");
-    setMsgs((m) => [...m, { role: "assistant", content: r.answer || "Nie udało się połączyć z pomocnikiem. Spróbuj ponownie." }]);
+    setMsgs((m) => [...m, { role: "assistant", content: t(r.answer || "Nie udało się połączyć z pomocnikiem. Spróbuj ponownie.") }]);
     const steps = (r.steps ?? []).filter((s) => targetById(s));
     if (steps.length) {
       setPlan({ steps, idx: 0 });

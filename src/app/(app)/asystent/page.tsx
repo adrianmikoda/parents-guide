@@ -5,6 +5,7 @@ import { useDialog } from "@/components/useDialog";
 import { api } from "@/components/AppContext";
 import { AiBadge } from "@/components/ui";
 import Markdown from "@/components/Markdown";
+import { getLang, t } from "@/lib/i18n";
 import Link from "next/link";
 
 type M = { role: "user" | "assistant"; content: string };
@@ -56,7 +57,7 @@ export default function Asystent() {
     setBusy(true);
     let answer = "Nie udało się uzyskać odpowiedzi. Spróbuj ponownie za chwilę.";
     try {
-      const r = await api("/api/assistant", { messages: next.slice(1) });
+      const r = await api("/api/assistant", { messages: next.slice(1), lang: getLang() });
       setMode(r.mode);
       if (r.answer) answer = r.answer;
     } catch {
@@ -65,7 +66,7 @@ export default function Asystent() {
       setBusy(false);
     }
     const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    setMsgs([...next, { role: "assistant", content: answer }]);
+    setMsgs([...next, { role: "assistant", content: t(answer) }]);
     if (!reduce) { setShown(0); setTyping(next.length); }
   }
 
@@ -80,7 +81,7 @@ export default function Asystent() {
 Numer zgłoszenia: **${nr}**. ${asked ? `Konsultant zobaczy całą rozmowę (${asked} ${asked === 1 ? "pytanie" : asked < 5 ? "pytania" : "pytań"}) i` : "Konsultant"} odpowie w PUE/eZUS, zwykle w ciągu 1 dnia roboczego.
 
 W pilnej sprawie zadzwoń do Centrum Obsługi Telefonicznej ZUS: **22 560 16 00** (pn.–pt. 7:00–18:00).`;
-    const next = [...msgs, { role: "assistant" as const, content: text }];
+    const next = [...msgs, { role: "assistant" as const, content: t(text) }];
     setMsgs(next);
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (!reduce) { setShown(0); setTyping(next.length - 1); }

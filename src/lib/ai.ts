@@ -25,6 +25,11 @@ async function create(body: Record<string, unknown>) {
   } as unknown as Anthropic.Beta.MessageCreateParamsNonStreaming);
 }
 
+/** Interfejs po angielsku: model odpowiada po angielsku i używa angielskich nazw zakładek aplikacji. */
+const ENGLISH = `
+
+IMPORTANT – language: the user is using the English version of the app. Always answer in English, even though these instructions are in Polish. Use the English names of the app's sections: Dashboard, Calculator, Pregnancy, Applications and documents, My profile, My ZUS data, Test cases, Risks, Support, Assistant, Admin panel, More; the helper is called “Where do I click?”. Keep Polish official names (ZUS, PUE/eZUS, e-ZLA, ZAM, ZAS-53, Z-3, “Za życiem”) and write amounts as PLN.`;
+
 export function systemPrompt(p: Params) {
   return `Jesteś asystentem „Przewodnika Rodzica” – narzędzia informacyjnego o zasiłkach z ubezpieczenia chorobowego (ZUS) w okresie ciąży i rodzicielstwa.
 Odpowiadasz po polsku, prostym językiem, krótko (maks. ok. 150 słów), z konkretnymi liczbami. Nie wydajesz decyzji – informujesz; przy wątpliwościach kieruj do ZUS (PUE/eZUS, tel. 22 560 16 00) lub pracodawcy.
@@ -47,11 +52,11 @@ Aktualne parametry narzędzia (obowiązujące – mogą różnić się od Twojej
 - wniosek ZAM obejmuje wszystkie okresy (macierzyński, na warunkach, rodzicielski, uzupełniający, ojcowski); formularze ZUR i ZAO nie istnieją; Z-3b zlikwidowano.`;
 }
 
-export async function askAssistant(p: Params, messages: { role: "user" | "assistant"; content: string }[], context?: string) {
+export async function askAssistant(p: Params, messages: { role: "user" | "assistant"; content: string }[], context?: string, lang = "pl") {
   const msg = await create({
     max_tokens: 2000,
     output_config: { effort: "low" },
-    system: [{ type: "text", text: systemPrompt(p), cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: systemPrompt(p) + (lang === "en" ? ENGLISH : ""), cache_control: { type: "ephemeral" } }],
     messages: [
       ...(context ? [{ role: "user" as const, content: `Kontekst użytkownika (dane z profilu): ${context}` }, { role: "assistant" as const, content: "Rozumiem, uwzględnię te dane." }] : []),
       ...messages.slice(-12),
@@ -76,7 +81,7 @@ export async function extractWithAI(pdfBase64: string | null, text: string | nul
 }
 
 /** Pomocnik nawigacji: model wybiera cele z rejestru (enum), więc nie może wskazać nieistniejącego przycisku. */
-export async function askGuideAI(question: string, path: string, targets: { id: string; page: string; label: string; hint: string }[], pages: Record<string, string>, account?: string) {
+export async function askGuideAI(question: string, path: string, targets: { id: string; page: string; label: string; hint: string }[], pages: Record<string, string>, account?: string, lang = "pl") {
   const list = targets.map((t) => `- ${t.id} | strona: ${t.page === "*" ? "każda (nagłówek)" : t.page} | ${t.label} – ${t.hint}`).join("\n");
   const schema = {
     type: "object",
@@ -98,7 +103,7 @@ Zasady aplikacji (podawaj je zgodnie z prawdą):
 - Odpowiadaj wyłącznie na pytania o zasiłki, urlopy rodzicielskie, ubezpieczenie chorobowe, dokumenty i korzystanie z tej aplikacji. Na pytania spoza tematu (np. matematyka, pogoda, polityka) odpowiedz jednym zdaniem, że w tym nie pomożesz, i podaj przykład pytania, w którym możesz pomóc.
 Strony: ${Object.entries(pages).map(([p, n]) => `${p} = ${n}`).join("; ")}.
 Cele (id | strona | opis):
-${list}`,
+${list}${lang === "en" ? ENGLISH : ""}`,
     messages: [{ role: "user", content: `Jestem na stronie ${path}.${account ? ` ${account}` : ""} ${question}` }],
   });
   const raw = textOf(msg);

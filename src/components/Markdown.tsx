@@ -1,4 +1,5 @@
 import { Fragment, ReactNode } from "react";
+import { t, useLang } from "@/lib/i18n";
 
 /**
  * Lekki renderer Markdown dla odpowiedzi asystenta (bez zewnętrznych zależności i bez innerHTML).
@@ -68,9 +69,10 @@ function parse(src: string): Block[] {
 }
 
 export default function Markdown({ text, className = "md" }: { text: string; className?: string }) {
+  const lang = useLang(); // odpowiedzi regułowe i powitania są po polsku – tłumaczone w całości, przed podziałem na fragmenty
   return (
     <div className={className}>
-      {parse(text).map((b, i) => {
+      {parse(t(text, lang)).map((b, i) => {
         const k = String(i);
         switch (b.t) {
           case "h": {

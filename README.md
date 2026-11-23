@@ -1,351 +1,412 @@
-# Przewodnik Rodzica
+# Parent's Guide
 
-**Zasiłkowy przewodnik przyszłego rodzica.** Aplikacja webowa (RWD) dla przyszłych rodziców, rodziców małych dzieci, rodziców adopcyjnych i rodzin zastępczych. Pokazuje uprawnienia z ubezpieczenia chorobowego dopasowane do sytuacji użytkownika, liczy zasiłki dla obojga rodziców, pomaga zaplanować urlopy i przeprowadza przez wnioski.
+**A benefits guide for future parents.** A responsive web app for expecting parents, parents of young children, adoptive parents and foster families. It shows the sickness-insurance entitlements that match the user's situation, calculates benefits for both parents, helps plan leave and walks the user through the applications.
+
+The interface is available in **English (default) and Polish** – switch with the **EN / PL** button next to the accessibility buttons.
+
+![Dashboard of a logged-in test user: the Future Parent Card with the due date, benefit base and who pays the benefit, the next steps with dates, and risks](docs/screenshots/dashboard.png)
 
 > [!IMPORTANT]
-> **Projekt konkursowy HackNation – to nie jest serwis ZUS.**
-> Logowanie do ZUS i przez mObywatel, dane z systemów ZUS (KSI/PUE), e-ZLA, zaświadczenie o należnościach do uregulowania i wysyłka wniosków są **symulowane** (makiety). Wszystkie osoby i dane są fikcyjne. Aplikacja nie łączy się z żadnym systemem ZUS ani z aplikacją mObywatel – nie wpisuj w niej prawdziwych danych.
+> **HackNation competition project – this is not a ZUS service.**
+> Logging in to ZUS and via mObywatel, data from ZUS systems (KSI/PUE), e-ZLA, the certificate of amounts due and sending applications are **simulated** (mock-ups). All people and data are fictitious. The app does not connect to any ZUS system or to the mObywatel app – do not enter real data.
 
 ---
 
-## Spis treści
+## Table of contents
 
 1. [Problem](#problem)
-2. [Rozwiązanie](#rozwiązanie)
-3. [Funkcje](#funkcje)
-4. [Konta testowe](#konta-testowe)
-5. [Szybki start](#szybki-start)
-6. [Konfiguracja](#konfiguracja)
-7. [Architektura](#architektura)
+2. [Solution](#solution)
+3. [Features](#features)
+4. [Test accounts](#test-accounts)
+5. [Quick start](#quick-start)
+6. [Configuration](#configuration)
+7. [Architecture](#architecture)
 8. [REST API](#rest-api)
-9. [Funkcje AI](#funkcje-ai)
-10. [Przechowywanie danych](#przechowywanie-danych)
-11. [Dostępność i wygląd](#dostępność-i-wygląd)
-12. [Mapowanie na wymagania wyzwania](#mapowanie-na-wymagania-wyzwania)
-13. [Zgodność formularzy z wzorami ZUS](#zgodność-formularzy-z-wzorami-zus)
-14. [Założenia do weryfikacji z ZUS](#założenia-do-weryfikacji-z-zus)
-15. [Droga do produkcji](#droga-do-produkcji)
+9. [AI features](#ai-features)
+10. [Data storage](#data-storage)
+11. [Accessibility, appearance and language](#accessibility-appearance-and-language)
+12. [Mapping to the challenge requirements](#mapping-to-the-challenge-requirements)
+13. [Compliance of forms with ZUS templates](#compliance-of-forms-with-zus-templates)
+14. [Assumptions to verify with ZUS](#assumptions-to-verify-with-zus)
+15. [Path to production](#path-to-production)
 
 ---
 
 ## Problem
 
-Przyszli rodzice, w tym rodzice adopcyjni i rodziny zastępcze, muszą sami odnaleźć się w rozproszonych i skomplikowanych przepisach o zasiłkach z ubezpieczenia chorobowego. Nie wiedzą, jakie świadczenia im przysługują w ciąży i po porodzie, ile wyniesie zasiłek, jak podzielić urlop między oboje rodziców ani jakie dokumenty i gdzie złożyć. Przez to często tracą pieniądze, przegapiają terminy albo nie zauważają ryzyk, np. nieopłaconych składek przy własnej działalności czy zakwestionowania podstawy wymiaru przez ZUS.
+Future parents, including adoptive parents and foster families, have to find their own way through scattered and complicated rules on sickness-insurance benefits. They don't know which benefits they are entitled to during pregnancy and after the birth, how much the benefit will be, how to split leave between both parents, or which documents to submit and where. As a result they often lose money, miss deadlines or overlook risks – e.g. unpaid contributions when self-employed, or ZUS challenging the benefit base.
 
-## Rozwiązanie
+## Solution
 
-Po zalogowaniu przez mObywatel (symulacja) aplikacja pobiera dane z ZUS albo pozwala uzupełnić je w krótkiej ankiecie. Na tej podstawie pokazuje świadczenia dopasowane do sytuacji rodzica i liczy zasiłek macierzyński i rodzicielski dla obojga rodziców. Symuluje podział urlopu i łączenie go z pracą na część etatu, podpowiada, jakie dokumenty i w jakim terminie złożyć oraz czy do pracodawcy, czy do ZUS. Ostrzega też przed ryzykami, a AI odpowiada na pytania prostym językiem i odczytuje dokumenty w PDF.
+After logging in with mObywatel (simulated), the app fetches data from ZUS or lets the user fill it in through a short survey. Based on that, it shows the benefits that match the parent's situation and calculates maternity and parental benefit for both parents. It simulates splitting leave and combining it with part-time work, tells the user which documents to submit, by when, and whether to the employer or to ZUS. It also warns about risks, while AI answers questions in plain language and reads PDF documents.
 
 ---
 
-## Funkcje
+## Features
 
-| Ekran | Ścieżka | Co robi |
+| Screen | Path | What it does |
 |---|---|---|
-| **Logowanie** | `/` | Przycisk „Zaloguj się do ZUS” otwiera makietę logowania: „Zaloguj z mObywatel” pokazuje kod QR z odliczaniem ważności i symulacją zeskanowania, a login i hasło są tylko makietą. Na stronie są też: „Załóż konto” (bez danych z ZUS), szybkie logowanie na konta testowe i tryb bez logowania. |
-| **Załóż konto** | `/nowe-konto` | Ankieta krok po kroku (rola, etap rodzicielstwa, terminy, zatrudnienie). Pytania można pominąć i uzupełnić później. |
-| **Panel ogólny** | `/pulpit` | Podsumowanie sytuacji, najbliższe terminy, skróty do usług. |
-| **Kalkulator** | `/kalkulator` | Zasiłek macierzyński i rodzicielski dla obojga rodziców, w tym: liczba dzieci, „Za życiem”, wcześniak, martwe urodzenie / zgon dziecka, przejęcie urlopu, 9 tygodni nieprzenoszalnych, praca na ¼ / ⅓ / ½ etatu, porównanie 81,5% z 100% / 70%, adopcja i rodzina zastępcza. |
-| **W ciąży** | `/ciaza` | Zasiłek chorobowy w ciąży, świadczenie rehabilitacyjne, zasiłek w wysokości zasiłku macierzyńskiego, a także sytuacje bez prawa do świadczeń. |
-| **Wnioski i dokumenty** | `/wnioski` | Jakie dokumenty, gdzie (płatnik czy ZUS) i kiedy złożyć. Formularze ZUS odwzorowane 1:1 ze wzorów (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 – zob. [Zgodność formularzy](#zgodność-formularzy-z-wzorami-zus)), wnioski do pracodawcy zgodne z rozporządzeniem Dz.U. 2025 poz. 322 (§ 2–§ 20: urlopy macierzyński, rodzicielski, ojcowski, uzupełniający, na warunkach macierzyńskiego, sytuacje szczególne, praca na rodzicielskim, urlop wychowawczy) oraz odpis aktu urodzenia – z podglądem wydruku i symulowaną wysyłką (UPO). |
-| **Moje dane ZUS** | `/zus` | Ubezpieczenie i podstawy wymiaru, podgląd e-ZLA, zaświadczenie o należnościach do uregulowania na wybrany dzień, zaświadczenia, pytanie do ZUS. |
-| **Mój profil** | `/profil` | Podgląd i poprawianie danych. Przy danych z ZUS zmienione pola są oznaczone i można przywrócić wartość z ZUS. |
-| **Sprawy testowe** | `/sprawy` | 12 wbudowanych spraw z oczekiwanym wynikiem oraz wgrywanie dokumentów PDF (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, poświadczenia, e-ZLA). |
-| **Ryzyka** | `/ryzyka` | Ryzyka ogólne i wyliczone z danych osoby: pozorność zatrudnienia, podwyższenie podstawy w ciąży, ustanie ubezpieczenia, należności do uregulowania, brak kodu B. |
-| **Wsparcie** | `/wsparcie` | Organizacje pomocowe z filtrowaniem według sytuacji oraz oficjalne źródła (ZUS, MRPiPS, PIP). |
-| **Asystent** | `/asystent` | Pytania i odpowiedzi w prostym języku (AI albo odpowiedzi z reguł). |
-| **Panel administracyjny** | `/admin` | Edycja parametrów prawnych (stawki, wymiary, terminy) z wersjonowaniem i historią zmian. Wymaga PIN-u. |
-| **Więcej** | `/wiecej` | Ustawienia wyglądu i pozostałe skróty, przydatne zwłaszcza na telefonie. |
+| **Login** | `/` | The “Log in to ZUS” button opens a login mock-up: “Log in with mObywatel” shows a QR code with a validity countdown and a simulated scan; login and password are only a mock-up. The page also has “Create an account” (without ZUS data), quick login to test accounts and a no-login mode. |
+| **Create an account** | `/nowe-konto` | A step-by-step survey (role, stage of parenthood, dates, employment). Questions can be skipped and answered later. |
+| **Dashboard** | `/pulpit` | Summary of the situation, upcoming deadlines, shortcuts to services. |
+| **Calculator** | `/kalkulator` | Maternity and parental benefit for both parents, including: number of children, “Za życiem” (For Life), premature baby, stillbirth / death of the child, taking over leave, the 9 non-transferable weeks, work at ¼ / ⅓ / ½ time, comparison of 81.5% with 100% / 70%, adoption and foster family. |
+| **Pregnancy** | `/ciaza` | Sickness benefit during pregnancy, rehabilitation benefit, benefit equal to maternity benefit, and situations with no right to benefits. |
+| **Applications and documents** | `/wnioski` | Which documents, where (payer or ZUS) and when to submit them. ZUS forms reproduced 1:1 from the templates (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 – see [Form compliance](#compliance-of-forms-with-zus-templates)), applications to the employer compliant with the regulation in Journal of Laws 2025 item 322 (§ 2–§ 20: maternity, parental, paternity, supplementary leave, leave on maternity-leave terms, special situations, work during parental leave, childcare leave) and a copy of the birth certificate – with print preview and simulated sending (UPO). |
+| **My ZUS data** | `/zus` | Insurance and benefit bases, e-ZLA preview, certificate of amounts due as of a chosen day, certificates, a question to ZUS. |
+| **My profile** | `/profil` | View and correct data. With ZUS data, changed fields are marked and the ZUS value can be restored. |
+| **Test cases** | `/sprawy` | 12 built-in cases with the expected result, plus uploading PDF documents (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, insurance confirmations, e-ZLA). |
+| **Risks** | `/ryzyka` | General risks and risks calculated from the person's data: sham employment, raising the base during pregnancy, end of insurance, amounts due, missing code B. |
+| **Support** | `/wsparcie` | Help organisations filtered by situation, and official sources (ZUS, MRPiPS, PIP). |
+| **Assistant** | `/asystent` | Questions and answers in plain language (AI or rule-based answers). |
+| **Admin panel** | `/admin` | Editing legal parameters (rates, leave lengths, deadlines) with versioning and change history. Requires a PIN. |
+| **More** | `/wiecej` | Appearance and language settings and other shortcuts, especially useful on a phone. |
 
-Na każdej stronie jest też **Pomocnik** (pływający przycisk). Po pytaniu „gdzie złożę wniosek o urlop ojcowski?” zakreśla na ekranie, gdzie kliknąć, i oferuje samouczek po pierwszym zalogowaniu.
+### Screenshots
+
+**Calculator** – the total benefit for both parents, the leave plan on a timeline and the period details, next to the inputs (situation, benefit base, leave split).
+
+![Calculator with the total maternity benefit for the mother and the father, the leave plan timeline and the table of periods](docs/screenshots/calculator.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/zus-data.png" alt="My ZUS data: insured person's data, estimated benefit base and the monthly income table"></td>
+    <td width="50%"><img src="docs/screenshots/risks.png" alt="Risks calculated from a business owner's data: contributions due, late voluntary contribution, document deadline"></td>
+  </tr>
+  <tr>
+    <td><b>My ZUS data</b> – simulated PUE/eZUS account with the estimated benefit base, which can be used in the calculator.</td>
+    <td><b>Risks</b> – risks found in the person's own data (here: a business owner with contributions due), each with what to do.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/assistant.png" alt="Assistant answering how to split parental leave with a partner"></td>
+    <td><img src="docs/screenshots/helper.png" alt="The Where do I click helper circling the Paternity application button"></td>
+  </tr>
+  <tr>
+    <td><b>Assistant</b> – plain-language answers based on the current legal parameters (AI or rule-based).</td>
+    <td><b>“Where do I click?” helper</b> – asked where to apply for paternity leave, it opens the right page and circles the button.</td>
+  </tr>
+</table>
+
+Every page also has a **Helper** (floating button). Ask “where do I submit the paternity leave application?” and it circles on screen where to click; after the first login it offers a tutorial.
 
 ---
 
-## Konta testowe
+## Test accounts
 
-Dostępne na stronie logowania (szybkie logowanie albo po symulacji zeskanowania kodu QR). Wszystkie osoby są fikcyjne.
+Available on the login page (quick login or after the simulated QR scan). All people are fictitious.
 
-| Osoba | Scenariusz |
+| Person | Scenario |
 |---|---|
-| **Anna Kowalczyk** | Umowa o pracę w dużej firmie (>20 ubezpieczonych), więc zasiłki wypłaca pracodawca. Planuje podział urlopu z partnerem. |
-| **Piotr Kowalczyk** | Ojciec. Pracodawca zgłasza ≤20 osób, więc zasiłek (ojcowski, rodzicielski) wypłaca ZUS. |
-| **Magdalena Zawadzka** | Działalność od maja 2026 r., podstawa podniesiona w ciąży, składki do uregulowania. Dużo ryzyk. |
-| **Katarzyna Lis** | Umowa zlecenia bez chorobowego, umowa kończy się przed porodem. Brak prawa do zasiłków. |
-| **Ewa Nowicka** | Rodzic adopcyjny. Przyjęła 3-letnie dziecko, złożyła wniosek o przysposobienie. |
+| **Anna Kowalczyk** | Employment contract in a large company (>20 insured), so the benefits are paid by the employer. Plans to split leave with her partner. |
+| **Piotr Kowalczyk** | Father. The employer reports ≤20 people, so the benefit (paternity, parental) is paid by ZUS. |
+| **Magdalena Zawadzka** | Business since May 2026, base raised during pregnancy, contributions due. Many risks. |
+| **Katarzyna Lis** | Contract of mandate without sickness insurance, the contract ends before the birth. No right to benefits. |
+| **Ewa Nowicka** | Adoptive parent. Took in a 3-year-old child and applied for adoption. |
+
+![Login page: “Log in to ZUS”, “Create an account”, and the list of test accounts for quick login](docs/screenshots/login.png)
 
 ---
 
-## Szybki start
+## Quick start
 
-Wymagania: **Node.js 20+** i npm.
+Requirements: **Node.js 20+** and npm.
 
 ```bash
 npm install
 npm run dev            # http://localhost:3000
 ```
 
-Wersja produkcyjna:
+Production build:
 
 ```bash
 npm run build
 npm start
 ```
 
-| Polecenie | Opis |
+| Command | Description |
 |---|---|
-| `npm run dev` | serwer deweloperski (Turbopack) z przeładowaniem na żywo |
-| `npm run build` | build produkcyjny |
-| `npm start` | uruchomienie buildu produkcyjnego |
-| `npx tsc --noEmit` | sprawdzenie typów TypeScript |
+| `npm run dev` | development server (Turbopack) with live reload |
+| `npm run build` | production build |
+| `npm start` | run the production build |
+| `npx tsc --noEmit` | TypeScript type check |
 
 ---
 
-## Konfiguracja
+## Configuration
 
-Zmienne środowiskowe ustaw w pliku `.env.local` (wzór w `.env.example`) albo w ustawieniach hostingu.
+Set environment variables in `.env.local` (template in `.env.example`) or in your hosting settings.
 
-| Zmienna | Domyślnie | Opis |
+| Variable | Default | Description |
 |---|---|---|
-| `ADMIN_PIN` | `1234` | PIN do panelu `/admin` (sprawdzany przez serwer). **Zmień go przy publicznym wdrożeniu.** |
-| `SESSION_SECRET` | wyprowadzony z `ADMIN_PIN` | Klucz podpisu ciasteczek sesji i kont. **Przy publicznym wdrożeniu ustaw długi, losowy ciąg znaków.** |
-| `ANTHROPIC_API_KEY` | – | Włącza funkcje AI (asystent, pomocnik, odczyt skanów PDF). Bez klucza aplikacja działa w trybie regułowym. |
-| `CLAUDE_MODEL` | `claude-sonnet-5-5` | Model AI. |
+| `ADMIN_PIN` | `1234` | PIN for the `/admin` panel (checked by the server). **Change it for a public deployment.** |
+| `SESSION_SECRET` | derived from `ADMIN_PIN` | Key for signing session and account cookies. **For a public deployment set a long random string.** |
+| `ANTHROPIC_API_KEY` | – | Enables the AI features (assistant, helper, reading PDF scans). Without a key the app runs in rule-based mode. |
+| `CLAUDE_MODEL` | `claude-sonnet-5-5` | AI model. |
 
 ---
 
-## Architektura
+## Architecture
 
-**Stos:** Next.js 15 (App Router, Turbopack), React 19, TypeScript, czysty CSS (bez frameworka UI), `unpdf` (tekst z PDF), `@anthropic-ai/sdk` (opcjonalne AI).
+**Stack:** Next.js 15 (App Router, Turbopack), React 19, TypeScript, plain CSS (no UI framework), `unpdf` (text from PDF), `@anthropic-ai/sdk` (optional AI).
 
 ```
 src/
 ├── app/
-│   ├── page.tsx                logowanie (makieta ZUS / mObywatel + QR, konta testowe)
-│   ├── nowe-konto/             ankieta zakładania konta bez danych z ZUS
-│   ├── (app)/                  ekrany po zalogowaniu (wspólny layout z menu)
+│   ├── page.tsx                login (ZUS / mObywatel mock-up + QR, test accounts)
+│   ├── nowe-konto/             account survey without ZUS data
+│   ├── (app)/                  screens after login (shared layout with menu)
 │   │   ├── pulpit/  kalkulator/  ciaza/  wnioski/  zus/  profil/
 │   │   └── sprawy/  ryzyka/  wsparcie/  asystent/  admin/  wiecej/
 │   ├── api/                    REST API (Next.js Route Handlers)
-│   ├── globals.css             cały system wizualny (tokeny, komponenty, motywy)
-│   ├── layout.tsx              <html>, ustawienia wyglądu przed pierwszym renderem
-│   └── icon.svg                ikona karty przeglądarki
+│   ├── globals.css             the whole visual system (tokens, components, themes)
+│   ├── layout.tsx              <html>, appearance and language settings before the first render
+│   └── icon.svg                browser tab icon
 ├── components/
-│   ├── Shell.tsx               nagłówek, menu, logo, przyciski dostępności
-│   ├── AppContext.tsx          sesja, parametry, helper api()
-│   ├── FloatingGuide.tsx       pomocnik „gdzie kliknąć” + samouczek
-│   ├── OfficialForm.tsx        formularze ZUS: pola do wypełnienia + wydruk w układzie wzoru
+│   ├── Shell.tsx               header, menu, logo, accessibility buttons, EN / PL switch
+│   ├── I18nRuntime.tsx         translates the page to English in the browser
+│   ├── AppContext.tsx          session, parameters, api() helper
+│   ├── FloatingGuide.tsx       “where to click” helper + tutorial
+│   ├── OfficialForm.tsx        ZUS forms: fields to fill in + printout in the template layout
 │   └── Icon.tsx  Markdown.tsx  Share.tsx  ui.tsx
 └── lib/
-    ├── params.ts               parametry prawne (stawki, wymiary, terminy) + opisy do panelu
-    ├── store.ts                zapis parametrów (data/params.json + historia)
-    ├── engine.ts               silnik reguł: podstawa, kalkulator, ciąża, ryzyka, dokumenty
-    ├── docparse.ts             parser dokumentów ZUS (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, e-ZLA…)
-    ├── zusforms.ts             wzory ZAM i ZAS-53 (treść 1:1) + walidacja
-    ├── zusforms-platnik.ts     wzory Z-3, Z-3a, ZAS-12 (treść 1:1) + walidacja
-    ├── wnioski-pracodawca.ts   wnioski do pracodawcy wg Dz.U. 2025 poz. 322 (§ 2–§ 20) + walidacja
-    ├── mock.ts                 symulowane dane ZUS / mObywatel (fikcyjne osoby)
-    ├── cases.ts                wbudowane sprawy testowe z oczekiwanym wynikiem
-    ├── quiz.ts                 pytania ankiety (wspólne dla klienta i serwera)
-    ├── users.ts                konta z ankiety + poprawki danych z ZUS
-    ├── session.ts              symulowana sesja (podpisane ciasteczko pp_session)
-    ├── cookie.ts               podpisane ciasteczka (HMAC)
-    ├── apps-client.ts          lista wysłanych wniosków w przeglądarce
-    ├── guide.ts                rejestr miejsc dla pomocnika (atrybuty data-guide)
-    ├── support.ts              organizacje pomocowe i oficjalne źródła
-    └── ai.ts                   integracja z Claude (opcjonalna)
+    ├── i18n/                   language switching: t(), useLang(), en.json (Polish → English dictionary)
+    ├── params.ts               legal parameters (rates, leave lengths, deadlines) + descriptions for the panel
+    ├── store.ts                saving parameters (data/params.json + history)
+    ├── engine.ts               rules engine: base, calculator, pregnancy, risks, documents
+    ├── docparse.ts             ZUS document parser (Z-3, Z-3a, ZAM, ZAS-53, ZAS-12, e-ZLA…)
+    ├── zusforms.ts             ZAM and ZAS-53 templates (1:1 wording) + validation
+    ├── zusforms-platnik.ts     Z-3, Z-3a, ZAS-12 templates (1:1 wording) + validation
+    ├── wnioski-pracodawca.ts   applications to the employer per Journal of Laws 2025 item 322 (§ 2–§ 20) + validation
+    ├── mock.ts                 simulated ZUS / mObywatel data (fictitious people)
+    ├── cases.ts                built-in test cases with the expected result
+    ├── quiz.ts                 survey questions (shared by client and server)
+    ├── users.ts                survey accounts + corrections to ZUS data
+    ├── session.ts              simulated session (signed pp_session cookie)
+    ├── cookie.ts               signed cookies (HMAC)
+    ├── apps-client.ts          list of sent applications in the browser
+    ├── guide.ts                registry of places for the helper (data-guide attributes)
+    ├── support.ts              help organisations and official sources
+    └── ai.ts                   Claude integration (optional)
 ```
+
+### How the translation works
+
+The source text of the app is Polish (the forms reproduce Polish official templates word for word). English comes from a dictionary, `src/lib/i18n/en.json`, that maps every user-visible Polish string to English, plus patterns for text with values inserted at runtime (e.g. `Urlop ojcowski – {0} dni ({1})` → `Paternity leave – {0} days ({1})`).
+
+- `I18nRuntime` translates text nodes and the `placeholder`, `title`, `aria-label` and `alt` attributes after hydration and whenever React changes the DOM (MutationObserver), so components keep rendering Polish and React never sees a server/client mismatch. Until the first pass is done the page is hidden, so Polish text never flashes.
+- Text that does not reach the page as-is goes through `t()`: Markdown answers of the assistant and the helper, and the share text.
+- With AI enabled, the assistant and the helper receive the language and answer in English. In rule-based mode the Polish answers are translated with the dictionary, and English keywords are recognised.
+- The choice is stored in `localStorage` (`lang`); English is the default. Amounts are shown as `PLN 1,234.56` in English.
+- Element contents marked with `data-no-i18n` are never translated.
+
+When you add or change Polish text in the UI, add its English translation to `en.json`; text without a translation stays in Polish.
 
 ---
 
 ## REST API
 
-| Metoda | Ścieżka | Opis |
+| Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/auth/mobywatel` | lista kont testowych + bieżąca sesja |
-| `POST` | `/api/auth/mobywatel` | `{ personaId }`, symulowane logowanie |
-| `DELETE` | `/api/auth/mobywatel` | wylogowanie |
-| `GET / POST / PUT` | `/api/accounts` | konto z ankiety: odczyt, założenie, uzupełnienie |
-| `GET / PUT / DELETE` | `/api/profile` | dane profilu, zapis poprawek, przywrócenie danych z ZUS |
-| `POST` | `/api/calculate` | kalkulator zasiłku (oboje rodzice, praca, adopcja, sytuacje szczególne) |
-| `POST` | `/api/base` | podstawa wymiaru zasiłku z krokami wyliczenia |
-| `POST` | `/api/pregnancy` | świadczenia w czasie ciąży |
-| `GET` | `/api/documents?title=&benefit=&insured=` | jakie dokumenty, gdzie i kiedy złożyć |
-| `POST` | `/api/documents/parse` | odczyt danych z PDF (parser regułowy, opcjonalnie AI) |
-| `GET / POST` | `/api/applications` | wnioski złożone w sesji, symulowana wysyłka z UPO |
-| `GET` | `/api/cases`, `/api/cases/{id}` | sprawy testowe, sprawa z wyliczeniem |
-| `GET` | `/api/zus/profile` | symulowane dane z KSI/PUE |
-| `GET` | `/api/zus/ezla` | symulowany podgląd e-ZLA |
-| `GET` | `/api/zus/debt?date=YYYY-MM-DD` | symulowane zaświadczenie o należnościach do uregulowania |
-| `GET` | `/api/support?obszar=` | organizacje pomocowe i oficjalne źródła |
-| `POST` | `/api/assistant` | asystent (AI lub reguły) |
-| `POST` | `/api/guide` | pomocnik: `{ question, path }`, zwraca `{ answer, steps, mode }` |
-| `GET / PUT / DELETE` | `/api/params` | parametry prawne, zapis (PIN), przywrócenie domyślnych |
+| `GET` | `/api/auth/mobywatel` | list of test accounts + current session |
+| `POST` | `/api/auth/mobywatel` | `{ personaId }`, simulated login |
+| `DELETE` | `/api/auth/mobywatel` | log out |
+| `GET / POST / PUT` | `/api/accounts` | survey account: read, create, complete |
+| `GET / PUT / DELETE` | `/api/profile` | profile data, saving corrections, restoring ZUS data |
+| `POST` | `/api/calculate` | benefit calculator (both parents, work, adoption, special situations) |
+| `POST` | `/api/base` | benefit base with calculation steps |
+| `POST` | `/api/pregnancy` | benefits during pregnancy |
+| `GET` | `/api/documents?title=&benefit=&insured=` | which documents, where and when to submit |
+| `POST` | `/api/documents/parse` | reading data from a PDF (rule-based parser, optionally AI) |
+| `GET / POST` | `/api/applications` | applications submitted in the session, simulated sending with UPO |
+| `GET` | `/api/cases`, `/api/cases/{id}` | test cases, a case with its calculation |
+| `GET` | `/api/zus/profile` | simulated KSI/PUE data |
+| `GET` | `/api/zus/ezla` | simulated e-ZLA preview |
+| `GET` | `/api/zus/debt?date=YYYY-MM-DD` | simulated certificate of amounts due |
+| `GET` | `/api/support?obszar=` | help organisations and official sources |
+| `POST` | `/api/assistant` | assistant (AI or rules); optional `lang: "en"` |
+| `POST` | `/api/guide` | helper: `{ question, path, lang? }`, returns `{ answer, steps, mode }` |
+| `GET / PUT / DELETE` | `/api/params` | legal parameters, saving (PIN), restoring defaults |
+
+API messages are in Polish; the English interface translates them when they are displayed.
 
 ---
 
-## Funkcje AI
+## AI features
 
-| Funkcja | Z AI | Bez AI |
+| Feature | With AI | Without AI |
 |---|---|---|
-| Obliczenia, uprawnienia, terminy, ryzyka | **nie**, zawsze deterministyczny silnik reguł (`engine.ts`) | – |
-| Odczyt danych z wgranego dokumentu | **opcjonalnie**: Claude czyta PDF (także skany), gdy pewność parsera jest niska lub po kliknięciu „Odczytaj ponownie z AI” | parser regułowy (`docparse.ts`) na warstwie tekstowej PDF |
-| Asystent | **opcjonalnie**: Claude dostaje aktualne parametry z panelu i kontekst profilu | baza odpowiedzi regułowych |
-| Pomocnik „gdzie kliknąć” | **opcjonalnie**: rozumie pytania swobodnie sformułowane | dopasowanie słów kluczowych (`guide.ts`) |
+| Calculations, entitlements, deadlines, risks | **no**, always the deterministic rules engine (`engine.ts`) | – |
+| Reading data from an uploaded document | **optional**: Claude reads the PDF (including scans) when the parser's confidence is low or after clicking “Read again with AI” | rule-based parser (`docparse.ts`) on the PDF text layer |
+| Assistant | **optional**: Claude gets the current parameters from the panel and the profile context | base of rule-based answers |
+| “Where to click” helper | **optional**: understands freely worded questions | keyword matching (`guide.ts`) |
 
-Wyniki AI są oznaczone w interfejsie fioletowym znacznikiem „AI” i nie trafiają bezpośrednio do wyliczeń: użytkownik zatwierdza odczytane dane.
+AI results are marked in the interface with a purple “AI” badge and do not go directly into calculations: the user confirms the data that was read.
 
 ---
 
-## Przechowywanie danych
+## Data storage
 
-| Dane | Gdzie | Uwagi |
+| Data | Where | Notes |
 |---|---|---|
-| Parametry prawne + historia | `data/params.json`, `data/params-history.json` | edytowane w `/admin` |
-| Sesja | podpisane ciasteczko `pp_session` | 4 godziny, podpis HMAC – wartości nie da się podmienić |
-| Konto z ankiety | podpisane ciasteczko `pp_account` | tylko w tej przeglądarce, usuwane przy wylogowaniu |
-| Poprawki danych z ZUS | podpisane ciasteczko `pp_overrides` | tylko pola różne od ZUS, tylko w bieżącej sesji |
-| Wysłane wnioski, zapisany plan | `sessionStorage` przeglądarki | lista „Wysłane w tej sesji”; serwer tylko wystawia UPO |
-| Szkice formularzy (ankieta, wnioski) | `sessionStorage` przeglądarki | przetrwają odświeżenie strony |
-| Ustawienia wyglądu | `localStorage` przeglądarki | |
+| Legal parameters + history | `data/params.json`, `data/params-history.json` | edited in `/admin` |
+| Session | signed `pp_session` cookie | 4 hours, HMAC signature – the value cannot be tampered with |
+| Survey account | signed `pp_account` cookie | only in this browser, deleted on logout |
+| Corrections to ZUS data | signed `pp_overrides` cookie | only fields that differ from ZUS, only in the current session |
+| Sent applications, saved plan | browser `sessionStorage` | the “Sent in this session” list; the server only issues the UPO |
+| Form drafts (survey, applications) | browser `sessionStorage` | survive a page refresh |
+| Appearance settings and language | browser `localStorage` | |
 
-Dane użytkowników nie są przechowywane na serwerze, więc działają tak samo na hostingu serverless (np. Vercel, wiele instancji) i nie są widoczne dla innych odwiedzających. Katalog `data/` (parametry z panelu admina) tworzy się sam przy pierwszym zapisie; **na hostingu tylko do odczytu** parametry trzymane są w pamięci serwera i wracają do domyślnych po ponownym wdrożeniu.
-
----
-
-## Dostępność i wygląd
-
-- **Przyciski w nagłówku:** powiększenie tekstu (3 stopnie), wysoki kontrast, motyw jasny / ciemny. Ustawienia są nakładane przed pierwszym renderem, bez mignięcia.
-- **RWD:** boczne menu na komputerze, dolna nawigacja i przycisk wstecz na telefonie.
-- Link „Przejdź do treści”, etykiety pól, role ARIA w oknach dialogowych i paskach postępu, obsługa klawiatury (Esc zamyka okna).
-- **Wygląd** wzorowany na portalach e-administracji (zielona kolorystyka, kafelki usług, karty). Opis systemu wizualnego jest w [`DESIGN.md`](DESIGN.md). Aplikacja **nie używa** logotypu ZUS, godła ani innych oficjalnych znaków. Własny znak to minimalistyczny piktogram rodziny.
-- **Język:** prosty, z eufemizmami tam, gdzie temat jest drażliwy (np. „należności do uregulowania” zamiast „zadłużenie”).
+User data is not stored on the server, so the app works the same on serverless hosting (e.g. Vercel, multiple instances) and the data is not visible to other visitors. The `data/` directory (parameters from the admin panel) is created automatically on the first save; **on read-only hosting** the parameters are kept in server memory and return to the defaults after a redeploy.
 
 ---
 
-## Mapowanie na wymagania wyzwania
+## Accessibility, appearance and language
 
-| Wymaganie | Gdzie |
+- **Header buttons:** language switch (**EN / PL**, English by default), larger text (3 levels), high contrast, light / dark theme. The settings are applied before the first render, without flicker. On a phone they are in the “More” tab.
+- **Responsive:** side menu on a computer, bottom navigation and a back button on a phone.
+- A “Skip to content” link, field labels, ARIA roles in dialogs and progress bars, keyboard support (Esc closes dialogs).
+- **Appearance** modelled on e-government portals (green colour scheme, service tiles, cards). The visual system is described in [`DESIGN.md`](DESIGN.md). The app **does not use** the ZUS logo, the national emblem or any other official marks. Its own mark is a minimalist family pictogram.
+- **Language:** plain wording, with euphemisms where the topic is sensitive (e.g. “amounts due” instead of “debt”).
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/mobile-dashboard.png" alt="Dashboard on a phone with the bottom navigation" width="300"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/mobile-dark.png" alt="Calculator results on a phone in the dark theme" width="300"></td>
+  </tr>
+  <tr>
+    <td align="center">On a phone: bottom navigation and a back button.</td>
+    <td align="center">Dark theme: calculator results and the leave plan.</td>
+  </tr>
+</table>
+
+---
+
+## Mapping to the challenge requirements
+
+| Requirement | Where |
 |---|---|
-| a) świadczenia w ciąży (zasiłek chorobowy, świadczenie rehabilitacyjne, zasiłek w wysokości zasiłku macierzyńskiego, także brak prawa) | `/ciaza` → `POST /api/pregnancy` |
-| b) kalkulator dla obojga rodziców (liczba dzieci, „Za życiem”, wcześniak, martwe urodzenie / zgon dziecka) | `/kalkulator` → `POST /api/calculate` |
-| c) łączenie urlopu rodzicielskiego z pracą | `/kalkulator`, sekcja 3 (¼, ⅓, ½ etatu) |
-| d) symulacja wspólnego korzystania przez oboje rodziców | `/kalkulator` (przejęcie macierzyńskiego, 9 tyg. nieprzenoszalnych, tryb kolejno / jednocześnie, gotowe warianty, porównanie 81,5% z 100% / 70%) |
-| e), j) adopcja i rodzina zastępcza niezawodowa | `/kalkulator` → „Przysposobienie” / „Rodzina zastępcza” (limity wieku 14 / 7 / 10 lat) |
-| f) kalkulator z indywidualną podstawą wymiaru z konkretnej sprawy | `/sprawy` (12 spraw testowych + wgrywanie PDF) → `GET /api/cases/{id}`, `POST /api/documents/parse` |
-| g) dokumenty, terminy, sposób złożenia (płatnik czy ZUS) | `/wnioski` → `GET /api/documents` |
-| h) zagrożenia i ryzyka | `/ryzyka` + ryzyka wyliczone z danych osoby (pozorność, podwyższenie podstawy, ustanie ubezpieczenia, należności do uregulowania, brak kodu B) |
-| i) organizacje charytatywne | `/wsparcie` → `GET /api/support` |
-| logowanie mObywatel (symulacja) | `/` → „Zaloguj się do ZUS” → „Zaloguj z mObywatel” (QR) → `POST /api/auth/mobywatel` |
-| pobranie danych z ZUS (symulacja) | `/zus`, przycisk „Pobierz dane z ZUS” w kalkulatorze → `GET /api/zus/profile` |
-| należności do uregulowania na dzień powstania prawa | `/zus` → Do uregulowania → `GET /api/zus/debt?date=` |
-| podgląd e-ZLA | `/zus` → e-ZLA → `GET /api/zus/ezla` |
-| PUE/eZUS (pytanie, dane konta) | `/zus` → Zadaj pytanie |
-| wnioski o urlopy i świadczenia + wysyłka | `/wnioski` (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 w układzie wzorów ZUS; wnioski do pracodawcy wg Dz.U. 2025 poz. 322) → `POST /api/applications` (UPO) |
-| odpis aktu urodzenia | `/wnioski` → Odpis aktu urodzenia |
-| przekierowania do ZUS / MRPiPS / PIP | `/wsparcie` → Oficjalne źródła |
-| panel administracyjny parametrów | `/admin` → `GET/PUT/DELETE /api/params` (wersjonowanie + historia zmian) |
-| upload / wybór wniosków do testów | `/sprawy` |
-| RWD | cały interfejs: boczne menu na komputerze, dolna nawigacja na telefonie |
+| a) benefits during pregnancy (sickness benefit, rehabilitation benefit, benefit equal to maternity benefit, including no entitlement) | `/ciaza` → `POST /api/pregnancy` |
+| b) calculator for both parents (number of children, “Za życiem”, premature baby, stillbirth / death of the child) | `/kalkulator` → `POST /api/calculate` |
+| c) combining parental leave with work | `/kalkulator`, section 3 (¼, ⅓, ½ time) |
+| d) simulation of both parents sharing the leave | `/kalkulator` (taking over maternity leave, 9 non-transferable weeks, one after the other / at the same time, ready-made options, comparison of 81.5% with 100% / 70%) |
+| e), j) adoption and non-professional foster family | `/kalkulator` → “Adoption” / “Foster family” (age limits 14 / 7 / 10 years) |
+| f) calculator with the individual benefit base from a specific case | `/sprawy` (12 test cases + PDF upload) → `GET /api/cases/{id}`, `POST /api/documents/parse` |
+| g) documents, deadlines, how to submit (payer or ZUS) | `/wnioski` → `GET /api/documents` |
+| h) threats and risks | `/ryzyka` + risks calculated from the person's data (sham employment, raising the base, end of insurance, amounts due, missing code B) |
+| i) charitable organisations | `/wsparcie` → `GET /api/support` |
+| mObywatel login (simulated) | `/` → “Log in to ZUS” → “Log in with mObywatel” (QR) → `POST /api/auth/mobywatel` |
+| fetching data from ZUS (simulated) | `/zus`, the “Fetch data from ZUS” button in the calculator → `GET /api/zus/profile` |
+| amounts due as of the day the right arises | `/zus` → Amounts due → `GET /api/zus/debt?date=` |
+| e-ZLA preview | `/zus` → e-ZLA → `GET /api/zus/ezla` |
+| PUE/eZUS (question, account data) | `/zus` → Ask a question |
+| leave and benefit applications + sending | `/wnioski` (ZAM, ZAS-53, Z-3, Z-3a, ZAS-12 in the ZUS template layout; applications to the employer per Journal of Laws 2025 item 322) → `POST /api/applications` (UPO) |
+| copy of the birth certificate | `/wnioski` → Birth certificate copy |
+| redirects to ZUS / MRPiPS / PIP | `/wsparcie` → Official sources |
+| admin panel for parameters | `/admin` → `GET/PUT/DELETE /api/params` (versioning + change history) |
+| uploading / choosing applications for testing | `/sprawy` |
+| responsive design | the whole interface: side menu on a computer, bottom navigation on a phone |
 
 ---
 
-## Zgodność formularzy z wzorami ZUS
+## Compliance of forms with ZUS templates
 
-Formularze, które wypełnia ubezpieczony albo płatnik składek, odwzorowują wzory ZUS z 2026 r. Jeden opis formularza (`src/lib/zusforms.ts`, `src/lib/zusforms-platnik.ts`) służy zarówno do wypełniania na ekranie, jak i do wydruku – teksty na ekranie i na papierze nie mogą się rozjechać.
+The forms filled in by the insured person or the contribution payer reproduce the 2026 ZUS templates. One form description (`src/lib/zusforms.ts`, `src/lib/zusforms-platnik.ts`) is used both for filling in on screen and for printing – the on-screen and paper text cannot drift apart. In the Polish version the wording is the official one; the English version shows a translation of it.
 
-| Formularz | Kto wypełnia | Wzór (nr zamówienia druku) | Kiedy |
+| Form | Filled in by | Template (print order no.) | When |
 |---|---|---|---|
-| **ZAM** – Wniosek o zasiłek macierzyński | ubezpieczony | 2965/26, Informacja 2993/26 | wszystkie okresy: macierzyński / na warunkach, rodzicielski, uzupełniający, ojcowski |
-| **ZAS-53** – Wniosek o zasiłek chorobowy | ubezpieczony | 2869/26 | działalność, osoby współpracujące, duchowni, marynarze, niezdolność po ustaniu ubezpieczenia |
-| **Z-3** – Zaświadczenie płatnika składek | płatnik (pracodawca) | 2924/26 | pracownik, gdy zasiłek ustala ZUS |
-| **Z-3a** – Zaświadczenie płatnika składek | płatnik (np. zleceniodawca) | 2929/26 | ubezpieczeni z innych tytułów (bez działalności, duchownych, marynarzy) |
-| **ZAS-12** – Zaświadczenie płatnika składek | płatnik | 2923/26 | zasiłek chorobowy / opiekuńczy za dalszy okres |
+| **ZAM** – Application for maternity benefit | insured person | 2965/26, Information 2993/26 | all periods: maternity / on maternity-leave terms, parental, supplementary, paternity |
+| **ZAS-53** – Application for sickness benefit | insured person | 2869/26 | business owners, cooperating persons, clergy, seafarers, incapacity after the end of insurance |
+| **Z-3** – Contribution payer's certificate | payer (employer) | 2924/26 | an employee, when the benefit is determined by ZUS |
+| **Z-3a** – Contribution payer's certificate | payer (e.g. principal) | 2929/26 | people insured under other titles (except business owners, clergy, seafarers) |
+| **ZAS-12** – Contribution payer's certificate | payer | 2923/26 | sickness / care benefit for a further period |
 
-### Co odwzorowano 1:1
+![The ZAM application: form fields filled in from the profile on the left, and the print preview in the layout of the ZUS template on the right](docs/screenshots/applications.png)
 
-- **Układ i treść:** kolejność sekcji i pól, etykiety, podpowiedzi pod polami, pola wyboru, pytania TAK/NIE, oświadczenia, „Instrukcja wypełniania”, „Pouczenie” / „Informacja do wniosku”, klauzula RODO i pouczenie o art. 63 ustawy zasiłkowej.
-- **Tabele w Z-3 i Z-3a:** nagłówki (także grupy kolumn), numeracja kolumn i liczba wierszy jak na wzorze.
-- **Tekst dosłownie** – łącznie z błędami wzoru, np. „sytemu” (ZAS-12), „jeżeli nadano numeru PESEL” (Z-3a), „wykazane sekcji” (Z-3). Poprawiono tylko błędy powstałe przy odczycie tekstu z PDF (np. „niedłużej” → „nie dłużej”, „profi lu” → „profilu”).
-- **Wydruk:** kratki na PESEL, NIP, REGON, rachunek i daty (dd/mm/rrrr), znak X w polach wyboru, wartości WIELKIMI LITERAMI (zgodnie z instrukcją wzoru), „Informacja” do ZAM na osobnej stronie.
-- **Wypełnianie z profilu:** dane osoby, płatnika, daty urlopu, e-ZLA, a w Z-3 / Z-3a – przychody z 12 miesięcy. Adresu ani miejsca urodzenia aplikacja nie zgaduje.
+### What is reproduced 1:1
 
-### Świadome różnice
+- **Layout and wording:** the order of sections and fields, labels, hints under fields, checkboxes, YES/NO questions, statements, the “Filling-in instructions”, the “Instructions” / “Information on the application”, the GDPR clause and the notice on Article 63 of the Benefits Act.
+- **Tables in Z-3 and Z-3a:** headers (including column groups), column numbering and the number of rows as in the template.
+- **Text word for word** – including errors in the template, e.g. “sytemu” (ZAS-12), “jeżeli nadano numeru PESEL” (Z-3a), “wykazane sekcji” (Z-3). Only errors introduced when extracting text from the PDF were corrected (e.g. “niedłużej” → “nie dłużej”, “profi lu” → “profilu”).
+- **Printout:** boxes for PESEL, NIP, REGON, the account number and dates (dd/mm/yyyy), an X in checkboxes, values in CAPITAL LETTERS (as the template's instructions require), the “Information” for ZAM on a separate page.
+- **Filling in from the profile:** the person's and payer's data, leave dates, e-ZLA, and in Z-3 / Z-3a – income for 12 months. The app does not guess the address or place of birth.
 
-- Logo ZUS nie jest grafiką – nagłówek odtworzono tekstem i kolorem.
-- Podział na strony wyznacza przeglądarka; nie ma numeracji „Strona x z y” ani stopki „Skład: Poligrafia ZUS…”.
-- Pola „okres (od–do)” na ekranie to dwa pola daty, a seria i numer e-ZLA – osobne pole; na wydruku wszystko trafia do jednego pola, jak na wzorze.
-- Podpis: odręczny na wydruku, przy wysyłce elektronicznej – symulowany podpis zaufany.
+### Deliberate differences
 
-### Walidacja
+- The ZUS logo is not an image – the header is recreated with text and colour.
+- Page breaks are set by the browser; there is no “Page x of y” numbering or the “Skład: Poligrafia ZUS…” footer.
+- “Period (from–to)” fields are two date fields on screen, and the e-ZLA series and number is a separate field; on the printout everything goes into one field, as in the template.
+- Signature: handwritten on the printout, simulated trusted-profile signature when sent electronically.
 
-Sprawdzane są zasady wynikające z treści wzorów i przepisów, m.in.:
+### Validation
 
-- PESEL, NIP i REGON (cyfra kontrolna) oraz reguła „podaj, jeśli nie ma nadanego …” (np. bez PESEL – data urodzenia i dokument tożsamości);
-- polski kod pocztowy 00-000, rachunek 26 cyfr;
-- okresy: kolejność dat, wymiar urlopu macierzyńskiego wg liczby dzieci, maks. 6 tyg. przed porodem, rodzicielski w maks. 5 częściach do końca roku, w którym dziecko kończy 6 lat, ojcowski 7–14 dni w maks. 2 częściach do 12. miesiąca życia;
-- stawka 81,5% tylko przy wniosku do 21 dni po porodzie i tylko razem z urlopem rodzicielskim;
-- uzupełniający urlop macierzyński: zaznaczona okoliczność urodzenia i okres pobytu w szpitalu (od 37. tyg. – min. 2 dni, pierwszy między 5. a 28. dniem po porodzie);
-- pola „Jeśli TAK …” wymagane po zaznaczeniu TAK, wykluczające się odpowiedzi (np. „do 20” / „powyżej 20 ubezpieczonych”, „NIE” w pkt 6 Z-3);
-- tabele: rok RRRR, miesiąc 1–12, kwartał 1–4, liczba dni, kwoty, procent potrąconej składki 0–100.
+The rules that follow from the templates and the law are checked, including:
 
-### Czego nie ma i dlaczego
+- PESEL, NIP and REGON (check digit) and the “give if no … has been assigned” rule (e.g. without PESEL – date of birth and identity document);
+- Polish postcode 00-000, 26-digit account number;
+- periods: date order, maternity leave length by number of children, max. 6 weeks before the birth, parental leave in max. 5 parts until the end of the year in which the child turns 6, paternity leave of 7–14 days in max. 2 parts until the child is 12 months old;
+- the 81.5% rate only with an application within 21 days of the birth and only together with parental leave;
+- supplementary maternity leave: the birth circumstance is marked and the period of the hospital stay is given (from 37 weeks – min. 2 days, the first between the 5th and 28th day after the birth);
+- “If YES …” fields required after ticking YES, mutually exclusive answers (e.g. “up to 20” / “more than 20 insured”, “NO” in point 6 of Z-3);
+- tables: year YYYY, month 1–12, quarter 1–4, number of days, amounts, percentage of contribution deducted 0–100.
 
-- **ZUR i ZAO** – takie formularze nie istnieją; zakres wniosku ZAM obejmuje wszystkie okresy zasiłku macierzyńskiego.
-- **Z-3b** – nie jest używany: „Informacja” do ZAM wymienia tylko Z-3 i Z-3a, a osoba prowadząca działalność nie składa zaświadczenia płatnika (ZAS-53 / ZAM bez Z-3).
-- **e-ZLA** – wystawia lekarz; aplikacja tylko je odczytuje.
-- **Wnioski do pracodawcy** – to nie są formularze ZUS i nie mają urzędowego wzoru graficznego; ich treść i załączniki określa rozporządzenie (zob. niżej).
+### What is not included and why
 
-### Wnioski do pracodawcy – zgodność z Dz.U. 2025 poz. 322
+- **ZUR and ZAO** – these forms do not exist; the scope of the ZAM application covers all maternity benefit periods.
+- **Z-3b** – not used: the “Information” for ZAM lists only Z-3 and Z-3a, and a self-employed person does not submit a payer's certificate (ZAS-53 / ZAM without Z-3).
+- **e-ZLA** – issued by the doctor; the app only reads it.
+- **Applications to the employer** – these are not ZUS forms and have no official graphic template; their content and attachments are set by the regulation (see below).
 
-Rozporządzenie MRPiPS z 11 marca 2025 r. w sprawie wniosków dotyczących uprawnień pracowników związanych z rodzicielstwem nie ustala wyglądu wniosku – ustala, co wniosek **zawiera** i jakie dokumenty się do niego **dołącza**. Aplikacja tworzy dla każdego paragrafu osobny wniosek (`src/lib/wnioski-pracodawca.ts`):
+### Applications to the employer – compliance with Journal of Laws 2025 item 322
 
-| § | Wniosek | Podstawa w Kodeksie pracy |
+The regulation of the Minister of Family, Labour and Social Policy of 11 March 2025 on applications concerning employees' parenthood rights does not set the look of the application – it sets what the application **contains** and which documents are **attached** to it. The app creates a separate application for each paragraph (`src/lib/wnioski-pracodawca.ts`):
+
+| § | Application | Basis in the Labour Code |
 |---|---|---|
-| 2 | część urlopu macierzyńskiego przed przewidywaną datą porodu | art. 180 § 2 |
-| 3, 4 | rezygnacja z pozostałej części urlopu macierzyńskiego (na warunkach) i powrót do pracy – po 14 tyg. albo po 8 tyg. przy orzeczeniu o niezdolności do samodzielnej egzystencji | art. 180 § 8 |
-| 5 | pozostała część urlopu macierzyńskiego / na warunkach / rodzicielskiego dla ojca lub innego członka najbliższej rodziny | art. 180 § 9 |
-| 6–13 | część urlopu w sytuacji szczególnej: pobyt matki w szpitalu (§ 6, § 7), zgon (§ 8, § 10), porzucenie dziecka (§ 9, § 11), matka nieubezpieczona z orzeczeniem (§ 12), matka bez tytułu do ubezpieczenia podejmuje zatrudnienie (§ 13) | art. 180 § 16, § 17 |
-| 14 | uzupełniający urlop macierzyński | art. 180² § 4, art. 183 § 3¹ |
-| 15 | urlop rodzicielski lub jego część | art. 182¹ᵈ § 1, art. 183 § 4–4² |
-| 16 | łączenie urlopu rodzicielskiego z pracą | art. 182¹ᵉ § 2 |
-| 17 | urlop ojcowski lub jego część | art. 182³ § 2 |
-| 18 | urlop na warunkach urlopu macierzyńskiego | art. 183 § 6 |
-| 19 | urlop wychowawczy lub jego część | art. 186 § 7 |
-| 20 | obniżenie wymiaru czasu pracy zamiast urlopu wychowawczego | art. 186⁷ § 1 |
+| 2 | part of maternity leave before the expected due date | Art. 180 § 2 |
+| 3, 4 | giving up the remaining part of maternity leave (on maternity-leave terms) and returning to work – after 14 weeks, or after 8 weeks with a certificate of inability to live independently | Art. 180 § 8 |
+| 5 | the remaining part of maternity leave / on maternity-leave terms / parental leave for the father or another close family member | Art. 180 § 9 |
+| 6–13 | part of the leave in a special situation: the mother in hospital (§ 6, § 7), death (§ 8, § 10), abandonment of the child (§ 9, § 11), uninsured mother with a certificate (§ 12), a mother without an insurance title takes up employment (§ 13) | Art. 180 § 16, § 17 |
+| 14 | supplementary maternity leave | Art. 180² § 4, Art. 183 § 3¹ |
+| 15 | parental leave or part of it | Art. 182¹ᵈ § 1, Art. 183 § 4–4² |
+| 16 | combining parental leave with work | Art. 182¹ᵉ § 2 |
+| 17 | paternity leave or part of it | Art. 182³ § 2 |
+| 18 | leave on maternity-leave terms | Art. 183 § 6 |
+| 19 | childcare leave or part of it | Art. 186 § 7 |
+| 20 | reduced working time instead of childcare leave | Art. 186⁷ § 1 |
 
-Jak zapewniono zgodność:
+How compliance is ensured:
 
-- **Treść wniosku** to ponumerowane elementy z „ust. 1” danego paragrafu, w brzmieniu rozporządzenia (np. „wskazanie okresu, na który ma być udzielony urlop rodzicielski lub ma być udzielona jego część: …”), z wartościami wpisanymi przez pracownika.
-- **Załączniki** są wymienione w brzmieniu rozporządzenia i zależą od sytuacji: np. kopia zaświadczenia „Za życiem” tylko przy wydłużonym urlopie rodzicielskim, kopia postanowienia o przysposobieniu tylko przy dziecku przysposobionym, dokumenty z „ust. 4” (przyjęcie dziecka na wychowanie, odroczenie obowiązku szkolnego) tylko przy dziecku przyjętym na wychowanie.
-- **Oświadczenia**, które rozporządzenie wymaga dołączyć (np. o zamiarach drugiego rodzica, o korzystaniu z urlopu ojcowskiego), są wpisane w treść pisma.
-- **„Stosuje się odpowiednio” (ust. 3):** wnioski z § 5–§ 13 można złożyć także dla urlopu na warunkach urlopu macierzyńskiego i urlopu rodzicielskiego – nazwy urlopu w treści zmieniają się automatycznie, a element o urlopie „wykorzystanym przed porodem” (dotyczy tylko urlopu macierzyńskiego) jest wtedy pomijany. Przy § 15 dla dziecka przyjętego na wychowanie stosuje się tylko ust. 1, więc załącznikami są wyłącznie dokumenty z ust. 4.
-- **§ 21–§ 23:** zagraniczny dokument urodzenia spoza UE/EFTA/Szwajcarii/państw umów o zabezpieczeniu społecznym (lub nie w ich języku urzędowym) dostaje dopisek o tłumaczeniu na język polski; dokumenty z akt osobowych można wskazać i nie są wtedy dołączane; przy kopiach pismo zawiera zobowiązanie do okazania oryginałów na żądanie pracodawcy.
-- **Walidacja** pilnuje warunków z rozporządzenia i Kodeksu pracy: np. 6 tyg. przed porodem (§ 2), powrót do pracy najwcześniej po 14 / 8 tyg. (§ 3, § 4), przejęcie po 8 tyg. w sytuacjach z § 6, § 7, § 9, data przejęcia po dniu zgonu / porzucenia (§ 8–§ 11), w § 13 wnioskuje tylko ojciec, uzupełniający urlop bezpośrednio po macierzyńskim i w pełnych tygodniach, urlop rodzicielski w maks. 5 częściach i w granicach puli, urlop ojcowski 7–14 dni do 12. miesiąca życia (przy przysposobieniu – 12 mies. od uprawomocnienia), urlop wychowawczy do 36 mies., wnioski składane co najmniej 21 dni wcześniej tam, gdzie wymaga tego Kodeks pracy.
+- **The content of the application** is the numbered elements from “para. 1” of the given paragraph, in the wording of the regulation (e.g. “the period for which parental leave or part of it is to be granted: …”), with the values entered by the employee.
+- **Attachments** are listed in the wording of the regulation and depend on the situation: e.g. a copy of the “Za życiem” certificate only with extended parental leave, a copy of the adoption decision only for an adopted child, the documents from “para. 4” (taking the child in for upbringing, deferred compulsory schooling) only for a child taken in for upbringing.
+- **Statements** that the regulation requires (e.g. on the other parent's intentions, on taking paternity leave) are written into the text of the letter.
+- **“Applies accordingly” (para. 3):** applications under § 5–§ 13 can also be submitted for leave on maternity-leave terms and parental leave – the names of the leave in the text change automatically, and the element on leave “used before the birth” (applies only to maternity leave) is then omitted. For § 15 for a child taken in for upbringing only para. 1 applies, so the attachments are only the documents from para. 4.
+- **§ 21–§ 23:** a foreign birth document from outside the EU/EFTA/Switzerland/social security agreement states (or not in their official language) gets a note about a translation into Polish; documents in the personnel file can be indicated and are then not attached; with copies, the letter includes an undertaking to show the originals at the employer's request.
+- **Validation** enforces the conditions of the regulation and the Labour Code: e.g. 6 weeks before the birth (§ 2), returning to work after 14 / 8 weeks at the earliest (§ 3, § 4), taking over after 8 weeks in the situations under § 6, § 7, § 9, the takeover date after the day of death / abandonment (§ 8–§ 11), in § 13 only the father applies, supplementary leave directly after maternity leave and in full weeks, parental leave in max. 5 parts and within the pool, paternity leave of 7–14 days until the child is 12 months old (for adoption – 12 months from the decision becoming final), childcare leave up to 36 months, applications submitted at least 21 days in advance where the Labour Code requires it.
 
-### Gdy ZUS zmieni wzór
+### When ZUS changes a template
 
-Treść każdego formularza jest w jednym miejscu (`ZAM`, `ZAS53` w `zusforms.ts`; `Z3`, `Z3A`, `ZAS12` w `zusforms-platnik.ts`). Zmiana etykiety lub dodanie pola to edycja tej listy – ekran, wydruk i walidacja korzystają z niej automatycznie. Numer zamówienia druku w komentarzu na górze pliku wskazuje wersję wzoru, z którą porównano formularz.
-
----
-
-## Założenia do weryfikacji z ZUS
-
-- Uzupełniający urlop macierzyński liczony wg „Informacji” do ZAM: tydzień urlopu za każdy tydzień pobytu dziecka w szpitalu – do upływu 15. tyg. po porodzie (przed 28. tyg. ciąży lub ≤1000 g), do upływu 8. tyg. (28–36 tyg., >1000 g); od 37. tyg. – pobyt min. 2 kolejne dni, pierwszy między 5. a 28. dniem po porodzie, liczony od 5. dnia do upływu 8. tyg. Założenia aplikacji: niepełny tydzień liczy się jako pełny, dzień porodu = dzień 0. Wartości można zmienić w panelu.
-- 9 tygodni urlopu rodzicielskiego nie przechodzi na drugiego rodzica, gdy ten nie jest ubezpieczony. Pełna pula przysługuje tylko w wyjątkach ustawowych (przełącznik w kalkulatorze).
-- Kwota netto jest orientacyjna: zaliczka PIT 12%, bez kwoty zmniejszającej.
-- Zasiłek za miesiąc = podstawa × stawka. Zasiłek za okres = stawka dzienna (1/30) × liczba dni.
-- Lista organizacji pomocowych wymaga weryfikacji przez ZUS.
+The content of each form is in one place (`ZAM`, `ZAS53` in `zusforms.ts`; `Z3`, `Z3A`, `ZAS12` in `zusforms-platnik.ts`). Changing a label or adding a field means editing that list – the screen, the printout and validation use it automatically. The print order number in the comment at the top of the file shows which template version the form was compared with. Remember to update the English translation in `src/lib/i18n/en.json` as well.
 
 ---
 
-## Droga do produkcji
+## Assumptions to verify with ZUS
 
-- **Logowanie:** Węzeł Krajowy / login.gov.pl (OIDC/SAML) zamiast makiety mObywatel.
-- **Dane:** integracja z KSI/PUE przez API ZUS zamiast `mock.ts`.
-- **Przechowywanie:** baza danych z audytem i rolami (np. Azure AD / Keycloak) zamiast plików JSON.
-- **Wnioski:** e-Doręczenia / PUE i podpis zaufany zamiast symulowanego UPO.
-- **Treści:** weryfikacja parametrów, założeń i listy organizacji przez ZUS.
+- Supplementary maternity leave calculated according to the “Information” for ZAM: one week of leave for each week the child is in hospital – until the end of the 15th week after the birth (before 28 weeks of pregnancy or ≤1000 g), until the end of the 8th week (28–36 weeks, >1000 g); from 37 weeks – a stay of at least 2 consecutive days, the first between the 5th and 28th day after the birth, counted from the 5th day until the end of the 8th week. The app's assumptions: an incomplete week counts as a full week, the day of birth = day 0. The values can be changed in the panel.
+- The 9 weeks of parental leave do not pass to the other parent when that parent is not insured. The full pool is available only in statutory exceptions (a switch in the calculator).
+- The net amount is approximate: 12% PIT advance, without the tax-reducing amount.
+- Benefit per month = base × rate. Benefit for a period = daily rate (1/30) × number of days.
+- The list of help organisations needs to be verified by ZUS.
 
 ---
 
-<sub>Projekt przygotowany na konkurs HackNation. Nie jest powiązany z Zakładem Ubezpieczeń Społecznych ani z aplikacją mObywatel. Wszystkie dane osobowe w aplikacji są fikcyjne.</sub>
+## Path to production
+
+- **Login:** National Node / login.gov.pl (OIDC/SAML) instead of the mObywatel mock-up.
+- **Data:** integration with KSI/PUE through the ZUS API instead of `mock.ts`.
+- **Storage:** a database with auditing and roles (e.g. Azure AD / Keycloak) instead of JSON files.
+- **Applications:** e-Delivery (e-Doręczenia) / PUE and a trusted profile signature instead of the simulated UPO.
+- **Content:** verification of parameters, assumptions and the list of organisations by ZUS.
+- **Translation:** an i18n library with translation keys instead of the Polish → English dictionary, and a review of the English wording by a translator.
+
+---
+
+<sub>Project prepared for the HackNation competition. It is not affiliated with the Social Insurance Institution (ZUS) or the mObywatel app. All personal data in the app is fictitious.</sub>

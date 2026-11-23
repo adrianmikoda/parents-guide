@@ -2,27 +2,28 @@
 import { useRef, useState } from "react";
 import Icon from "./Icon";
 import { useDialog } from "./useDialog";
+import { t } from "@/lib/i18n";
 
 /**
  * Udostępnianie informacji o przysługujących zasiłkach: systemowe „Udostępnij” (telefon), kopiowanie
  * do schowka albo e-mail (np. do partnera, pracodawcy, biura rachunkowego). Tekst można przed wysłaniem poprawić.
  */
 export default function ShareDialog({ title, text, onClose }: { title: string; text: string; onClose: () => void }) {
-  const [body, setBody] = useState(text);
+  const [body, setBody] = useState(() => t(text)); // pole tekstowe nie jest tłumaczone na stronie – tłumaczymy treść od razu
   const [status, setStatus] = useState("");
   const box = useRef<HTMLDivElement>(null);
   useDialog(box, onClose);
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   async function share() {
-    try { await navigator.share({ title, text: body }); setStatus("Udostępniono."); }
+    try { await navigator.share({ title: t(title), text: body }); setStatus("Udostępniono."); }
     catch (e) { if ((e as Error).name !== "AbortError") setStatus("Nie udało się udostępnić – skopiuj tekst."); }
   }
   async function copy() {
     try { await navigator.clipboard.writeText(body); setStatus("Skopiowano do schowka."); }
     catch { setStatus("Zaznacz tekst i skopiuj go ręcznie (Ctrl+C)."); }
   }
-  const mail = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+  const mail = `mailto:?subject=${encodeURIComponent(t(title))}&body=${encodeURIComponent(body)}`;
 
   return (
     <div className="modal-bg" role="dialog" aria-modal aria-labelledby="share-title" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>

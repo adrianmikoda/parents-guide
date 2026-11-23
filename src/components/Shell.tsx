@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Icon from "./Icon";
 import { useApp } from "./AppContext";
 import FloatingGuide, { setGuideEnabled, useGuideEnabled } from "./FloatingGuide";
+import { Lang, setLang, useLang } from "@/lib/i18n";
 
 const NAV = [
   { href: "/pulpit", label: "Panel ogólny", sub: "Twoje sprawy i terminy", icon: "home" },
@@ -98,7 +99,21 @@ const isDark = () => {
   return t ? t === "dark" : window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 };
 
-/** Przyciski dostępności: większy tekst (3 stopnie), wysoki kontrast i motyw jasny/ciemny. */
+/** Przełącznik języka strony: EN (domyślny) / PL. Zmiana przeładowuje stronę. */
+export function LangSwitch() {
+  const lang = useLang();
+  const opt = (l: Lang, label: string, name: string) => (
+    <button type="button" lang={l} aria-pressed={lang === l} aria-label={name} title={name} onClick={() => lang !== l && setLang(l)}>{label}</button>
+  );
+  return (
+    <div className="lang" role="group" aria-label="Language / Język" data-guide="lang" data-no-i18n>
+      {opt("en", "EN", "English")}
+      {opt("pl", "PL", "Polski")}
+    </div>
+  );
+}
+
+/** Przyciski dostępności: język, większy tekst (3 stopnie), wysoki kontrast i motyw jasny/ciemny. */
 export function A11yButtons() {
   const [text, setText] = useState(0);
   const [contrast, setContrast] = useState(false);
@@ -119,6 +134,7 @@ export function A11yButtons() {
   const toggleTheme = () => { const d = !dark; setDark(d); store("theme", d ? "dark" : "light"); el().dataset.theme = d ? "dark" : "light"; };
   return (
     <div className="a11y" role="group" aria-label="Ustawienia wyglądu">
+      <LangSwitch />
       <button type="button" data-guide="a11y-text" aria-pressed={text > 0} title="Powiększ tekst" aria-label={`Rozmiar tekstu: ${[100, 112, 125][text]}%`} onClick={() => setTextLevel((text + 1) % 3)}>
         A<span style={{ fontSize: 11 }}>+</span>
       </button>

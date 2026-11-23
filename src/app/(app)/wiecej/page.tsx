@@ -24,7 +24,7 @@ export default function Wiecej() {
     <div>
     <div className="card mb">
       <h2>Wygląd i dostępność</h2>
-      <p className="hint">Powiększenie tekstu, wysoki kontrast oraz motyw jasny lub ciemny.</p>
+      <p className="hint">Język strony (EN / PL), powiększenie tekstu, wysoki kontrast oraz motyw jasny lub ciemny.</p>
       <A11yButtons />
       <div className="row mt"><button className="btn btn-outline" onClick={startTutorial}>Uruchom samouczek <span className="chev">›</span></button></div>
       <div className="mt">
