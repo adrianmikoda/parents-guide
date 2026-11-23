@@ -10,6 +10,14 @@ The interface is available in **English (default) and Polish** – switch with t
 > **HackNation competition project – this is not a ZUS service.**
 > Logging in to ZUS and via mObywatel, data from ZUS systems (KSI/PUE), e-ZLA, the certificate of amounts due and sending applications are **simulated** (mock-ups). All people and data are fictitious. The app does not connect to any ZUS system or to the mObywatel app – do not enter real data.
 
+
+## Demo showcase
+
+> [!TIP]
+> **Watch the demo video:** click the thumbnail below to watch it on YouTube.
+>
+> [![Watch the demo](demo-video/przewodnik-rodzica-film-miniatura.png)](https://youtu.be/YUEiUQ1e5fU)
+
 ---
 
 ## Table of contents
